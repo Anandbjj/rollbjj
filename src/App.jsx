@@ -1,6 +1,29 @@
 import { useState, useRef, useEffect } from "react";
 
 // ═══════════════════════════════════════════════════════════
+//  LOCAL SAVING
+//  Persists progress to the browser's localStorage so it survives
+//  refreshes and revisits. Wrapped in try/catch so it silently does
+//  nothing where storage is blocked (e.g. sandboxed previews) instead
+//  of crashing. Works on the real deployed site and local dev.
+// ═══════════════════════════════════════════════════════════
+const SAVE_KEY = "rollcard_save_v1";
+function loadSave(){
+  try{
+    const raw = window.localStorage.getItem(SAVE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+function writeSave(data){
+  try{
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  }catch(e){ /* storage unavailable — ignore */ }
+}
+function clearSave(){
+  try{ window.localStorage.removeItem(SAVE_KEY); }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════════
 //  ⭐ DROP YOUR ART HERE ⭐
 //  When you have your PNGs, paste their URLs into this object.
 //  Structure matches the folder layout:
@@ -688,14 +711,15 @@ const WARRIORS={
 
 const ARCH_MAP={GW:"mongol",PP:"knight",SC:"viking",SH:"samurai",AN:"spartan"};
 
-// Free unlock milestones for the 4 base warriors you didn't get from the quiz.
-// Whichever one the quiz gives you starts unlocked; the others open up through real training.
+// Unlock milestones for the base warriors you didn't get from the quiz.
+// Tuned so each is a real, earned goal — spread across lifetime points and
+// competition count (both reflect actual training). One unlocks at a time.
 const UNLOCK_REQUIREMENTS = {
-  mongol:  { type:"streak",      value:2,  label:"Reach a 2-week streak" },
-  knight:  { type:"lifetime",    value:15, label:"Earn 15 lifetime points" },
-  viking:  { type:"competition", value:1,  label:"Log your first competition" },
-  samurai: { type:"lifetime",    value:30, label:"Earn 30 lifetime points" },
-  spartan: { type:"streak",      value:4,  label:"Reach a 4-week streak" },
+  mongol:  { type:"lifetime",    value:20,  label:"Earn 20 lifetime points" },
+  knight:  { type:"lifetime",    value:40,  label:"Earn 40 lifetime points" },
+  viking:  { type:"lifetime",    value:70,  label:"Earn 70 lifetime points" },
+  samurai: { type:"competition", value:3,   label:"Log 3 competitions" },
+  spartan: { type:"lifetime",    value:100, label:"Earn 100 lifetime points" },
 };
 
 // Lightweight duel balance per archetype — small, flavor-driven edges, not stat gaps big
@@ -796,22 +820,24 @@ const GYM_MEMBERS = [
 ];
 
 export default function App(){
-  const [screen,setScreen]=useState("intro");
+  // Load any saved progress once, synchronously, before first render.
+  const saved = loadSave();
+  const [screen,setScreen]=useState(saved?.warriorKey ? "home" : "intro");
   const [qIndex,setQIndex]=useState(0);
   const [tally,setTally]=useState({GW:0,PP:0,SC:0,SH:0,AN:0});
-  const [warriorKey,setWarriorKey]=useState(null); // the ACTIVE warrior — receives new points
+  const [warriorKey,setWarriorKey]=useState(saved?.warriorKey ?? null); // the ACTIVE warrior — receives new points
   // Every warrior line keeps its own saved progress, even ones you're not using right now.
-  const [warriorProgress,setWarriorProgress]=useState({mongol:0,knight:0,viking:0,samurai:0,spartan:0});
-  const [unlockedWarriors,setUnlockedWarriors]=useState([]); // keys unlocked so far (quiz pick + milestones)
+  const [warriorProgress,setWarriorProgress]=useState(saved?.warriorProgress ?? {mongol:0,knight:0,viking:0,samurai:0,spartan:0});
+  const [unlockedWarriors,setUnlockedWarriors]=useState(saved?.unlockedWarriors ?? []); // keys unlocked so far (quiz pick + milestones)
   const [newlyUnlocked,setNewlyUnlocked]=useState(null);     // warrior key just unlocked, for the celebration overlay
   const points=warriorProgress[warriorKey]??0; // derived: active warrior's own progress
-  const [streak,setStreak]=useState(0);
+  const [streak,setStreak]=useState(saved?.streak ?? 0);
   const [revealed,setRevealed]=useState(false);
   const [oppKey,setOppKey]=useState(null);
   const [oppTier,setOppTier]=useState(1);
   const [duelPhase,setDuelPhase]=useState("idle"); // idle | attack | defend | resolve | result
   const [duelResult,setDuelResult]=useState(null);
-  const [record,setRecord]=useState({w:0,l:0});
+  const [record,setRecord]=useState(saved?.record ?? {w:0,l:0});
   const [hpYou,setHpYou]=useState(100);
   const [hpOpp,setHpOpp]=useState(100);
   const [markerPos,setMarkerPos]=useState(0);   // 0..100 position of sweeping marker
@@ -823,9 +849,9 @@ export default function App(){
   const markerRef=useRef({dir:1,raf:null,active:false});
   const [popups,setPopups]=useState([]);
   const [anim,setAnim]=useState(null);
-  const idRef=useRef(0);
+  const idRef=useRef((saved?.sessions?.reduce((m,s)=>Math.max(m,(s.id??0)+1),0)) ?? 0);
   // ─── Training log: one entry per logged class/competition ───
-  const [sessions,setSessions]=useState([]);       // [{id, date, type, points, tags:[], note}]
+  const [sessions,setSessions]=useState(saved?.sessions ?? []);       // [{id, date, type, points, tags:[], note}]
   const [detailPrompt,setDetailPrompt]=useState(null); // session id awaiting optional tag/note detail, or null
   const [draftTags,setDraftTags]=useState([]);
   const [draftNote,setDraftNote]=useState("");
@@ -833,11 +859,11 @@ export default function App(){
   // ─── Competition logging: requires naming the event + once-per-day cap ───
   const [compModalOpen,setCompModalOpen]=useState(false);
   const [compEventName,setCompEventName]=useState("");
-  const [lastCompDateStr,setLastCompDateStr]=useState(null);
+  const [lastCompDateStr,setLastCompDateStr]=useState(saved?.lastCompDateStr ?? null);
   // ─── Schedule (editable) ───
-  const [schedule,setSchedule]=useState(DEFAULT_SCHEDULE);
+  const [schedule,setSchedule]=useState(saved?.schedule ?? DEFAULT_SCHEDULE);
   const [now,setNow]=useState(new Date());
-  const [lastClassLogStr,setLastClassLogStr]=useState(null); // toDateString of last class logged, to hide the prompt after logging
+  const [lastClassLogStr,setLastClassLogStr]=useState(saved?.lastClassLogStr ?? null); // toDateString of last class logged, to hide the prompt after logging
   const [addDay,setAddDay]=useState(2);
   const [addStart,setAddStart]=useState("19:30");
   const [addEnd,setAddEnd]=useState("22:00");
@@ -852,28 +878,40 @@ export default function App(){
   // check if any locked warrior's milestone has now been met.
   useEffect(()=>{
     if(!warriorKey)return; // no unlocks until the quiz has given you a starting warrior
+    if(newlyUnlocked)return; // don't stack unlock popups — wait until the current one is dismissed
     const lifetime=Object.values(warriorProgress).reduce((a,b)=>a+b,0);
-    const hasCompeted=sessions.some((s)=>s.type==="competition");
-    const next=[...unlockedWarriors];
-    let justUnlocked=null;
-    Object.keys(UNLOCK_REQUIREMENTS).forEach((key)=>{
-      if(next.includes(key))return;
+    const compCount=sessions.filter((s)=>s.type==="competition").length;
+    // Unlock at most ONE warrior per pass, in a fixed order, so a big jump can't
+    // hand over a pile of warriors at once — they're earned one at a time.
+    const order=["mongol","knight","viking","samurai","spartan"];
+    for(const key of order){
+      if(unlockedWarriors.includes(key))continue;
       const req=UNLOCK_REQUIREMENTS[key];
       let met=false;
-      if(req.type==="streak")met=streak>=req.value;
-      else if(req.type==="lifetime")met=lifetime>=req.value;
-      else if(req.type==="competition")met=hasCompeted;
-      if(met){next.push(key);if(!justUnlocked)justUnlocked=key;}
-    });
-    if(justUnlocked){setUnlockedWarriors(next);setNewlyUnlocked(justUnlocked);}
+      if(req.type==="lifetime")met=lifetime>=req.value;
+      else if(req.type==="competition")met=compCount>=req.value;
+      if(met){
+        setUnlockedWarriors((u)=>[...u,key]);
+        setNewlyUnlocked(key);
+        break; // only one per pass
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[warriorProgress,streak,sessions,warriorKey]);
+  },[warriorProgress,sessions,warriorKey,newlyUnlocked]);
 
   // Keep "now" fresh so the schedule status (upcoming/ongoing/done) updates on its own.
   useEffect(()=>{
     const id=setInterval(()=>setNow(new Date()),30000);
     return ()=>clearInterval(id);
   },[]);
+
+  // Persist progression to localStorage whenever any of it changes.
+  useEffect(()=>{
+    writeSave({
+      warriorKey, warriorProgress, unlockedWarriors, streak,
+      record, sessions, lastCompDateStr, schedule, lastClassLogStr,
+    });
+  },[warriorKey,warriorProgress,unlockedWarriors,streak,record,sessions,lastCompDateStr,schedule,lastClassLogStr]);
 
   function setActiveWarrior(key){
     if(!unlockedWarriors.includes(key))return;
@@ -890,6 +928,21 @@ export default function App(){
   function goBoard(){setScreen("board");}
   function goHistory(){setScreen("history");}
   function goMore(){setScreen("more");}
+  function resetProgress(){
+    if(!window.confirm("Reset everything? Your warrior, points, roster, and training log will be permanently wiped."))return;
+    clearSave();
+    setWarriorKey(null);
+    setWarriorProgress({mongol:0,knight:0,viking:0,samurai:0,spartan:0});
+    setUnlockedWarriors([]);
+    setNewlyUnlocked(null);
+    setStreak(0);
+    setRecord({w:0,l:0});
+    setSessions([]);
+    setLastCompDateStr(null);
+    setLastClassLogStr(null);
+    setSchedule(DEFAULT_SCHEDULE);
+    setScreen("intro");
+  }
   function gain(amount,label){const before=points,bT=THRESHOLDS.filter((t)=>before>=t).length-1;const after=before+amount,aT=THRESHOLDS.filter((t)=>after>=t).length-1;setWarriorProgress((p)=>({...p,[warriorKey]:after}));addPopup(label);triggerAnim("celebrate",900);if(aT>bT){setTimeout(()=>setScreen("evolve"),500);setTimeout(()=>setScreen("home"),2800);}}
   function addSession(points,type,eventName=""){
     const id=idRef.current++;
@@ -1415,6 +1468,11 @@ export default function App(){
               <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Shop</div><div style={Z.moreItemSub}>Cosmetics — no pay-to-win</div></div>
               <span style={Z.moreChevron}>›</span>
             </button>
+            <button className="act" style={Z.moreItem} onClick={resetProgress}>
+              <span style={{...Z.moreItemIcon,color:"#B33A3A"}}>↺</span>
+              <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Reset Progress</div><div style={Z.moreItemSub}>Wipe everything and start over</div></div>
+              <span style={Z.moreChevron}>›</span>
+            </button>
           </div>
           {navBar}
         </div>
@@ -1617,7 +1675,7 @@ const Z={
   revArch:{fontSize:13,color:"#8B95A3",fontWeight:600,margin:"0 0 4px"},
   revTag:{fontSize:12.5,color:"#8B95A3",margin:"0 0 12px",fontStyle:"italic"},
   revDesc:{fontSize:13.5,lineHeight:1.6,color:"#D5DAE1",margin:"0 0 24px",maxWidth:270},
-  homeWrap:{height:"100%",display:"flex",flexDirection:"column",alignItems:"center",padding:"36px 22px 78px",position:"relative"},
+  homeWrap:{height:"100%",display:"flex",flexDirection:"column",alignItems:"center",padding:"36px 22px 84px",position:"relative"},
   homeHead:{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%",marginBottom:8},
   archTag:{fontSize:11.5,fontWeight:600},
   streakTag:{fontSize:11,color:"#E8935A",fontWeight:600},
@@ -1630,7 +1688,7 @@ const Z={
   xpL:{fontSize:11,color:"#8B95A3"},
   xpTrack:{height:7,background:"rgba(255,255,255,0.08)",borderRadius:4,overflow:"hidden"},
   xpFill:{height:"100%",borderRadius:4,transition:"width 0.5s cubic-bezier(0.22,1,0.36,1)"},
-  homeFoot:{marginTop:"auto",width:"100%",display:"flex",flexDirection:"column",gap:8},
+  homeFoot:{marginTop:"auto",marginBottom:8,width:"100%",display:"flex",flexDirection:"column",gap:8},
   secBtn:{padding:"12px 16px",background:"transparent",border:"1px solid rgba(255,255,255,0.18)",color:"#EDEFF2",borderRadius:14,fontSize:13,fontWeight:600},
   popLayer:{position:"absolute",top:160,left:0,right:0,display:"flex",justifyContent:"center",pointerEvents:"none"},
   popup:{position:"absolute",fontFamily:"'Bebas Neue', sans-serif",fontSize:20,animation:"floatUp 1.3s ease-out forwards"},
