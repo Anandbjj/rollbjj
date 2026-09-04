@@ -1171,10 +1171,11 @@ export default function App(){
   const NAV_ITEMS=[
     {key:"home",  label:"Home",  icon:"🏠", go:goHome},
     {key:"duel",  label:"Duel",  icon:"⚔️", go:goDuel},
+    {key:"stats", label:"Stats", icon:"📊", go:()=>setScreen("stats")},
     {key:"roster",label:"Roster",icon:"🛡️", go:goRoster},
     {key:"more",  label:"More",  icon:"☰",  go:()=>setScreen("more")},
   ];
-  const activeNav = screen==="home"?"home":screen==="duel"?"duel":screen==="roster"?"roster":["more","board","history","schedule","shop"].includes(screen)?"more":null;
+  const activeNav = screen==="home"?"home":screen==="duel"?"duel":screen==="stats"?"stats":screen==="roster"?"roster":["more","board","history","schedule","shop"].includes(screen)?"more":null;
   const navBar=(
     <div style={Z.navBar}>
       {NAV_ITEMS.map((n)=>(
@@ -1442,6 +1443,72 @@ export default function App(){
             <p style={Z.boardFoot}>✓ verified = attendance confirmed by the gym's check-in. Self-logged training counts too, but only verified logs earn the badge.</p>
           </div>
         );
+      })()}
+
+      {screen==="stats"&&warrior&&(()=>{
+        const totalSessions=sessions.length;
+        const classCount=sessions.filter((s)=>s.type==="class").length;
+        const compCount=sessions.filter((s)=>s.type==="competition").length;
+        // Sessions in the last 7 days
+        const weekAgo=Date.now()-7*24*60*60*1000;
+        const thisWeek=sessions.filter((s)=>new Date(s.date).getTime()>=weekAgo).length;
+        // Sessions this calendar month
+        const nowD=new Date();
+        const thisMonth=sessions.filter((s)=>{const d=new Date(s.date);return d.getMonth()===nowD.getMonth()&&d.getFullYear()===nowD.getFullYear();}).length;
+        // Tag tally → most-landed techniques
+        const tagCounts={};
+        sessions.forEach((s)=>(s.tags||[]).forEach((t)=>{tagCounts[t]=(tagCounts[t]||0)+1;}));
+        const topTags=Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+        const maxTag=topTags.length?topTags[0][1]:1;
+        const lifetime=Object.values(warriorProgress).reduce((a,b)=>a+b,0);
+        const totalDuels=record.w+record.l;
+        const winPct=totalDuels?Math.round((record.w/totalDuels)*100):0;
+        return (
+          <div style={Z.statsWrap}>
+            <h2 style={Z.statsTitle}>Your Stats</h2>
+            <p style={Z.statsSub}>Everything you've logged, at a glance.</p>
+
+            {/* Top metric grid */}
+            <div style={Z.statsGrid}>
+              <div style={Z.statCard}><div style={{...Z.statNum,color:warrior.accent}}>{totalSessions}</div><div style={Z.statLbl}>Total sessions</div></div>
+              <div style={Z.statCard}><div style={{...Z.statNum,color:"#E8935A"}}>🔥 {streak}</div><div style={Z.statLbl}>Week streak</div></div>
+              <div style={Z.statCard}><div style={{...Z.statNum,color:"#6A9EE8"}}>{thisWeek}</div><div style={Z.statLbl}>Last 7 days</div></div>
+              <div style={Z.statCard}><div style={{...Z.statNum,color:"#5AB48C"}}>{thisMonth}</div><div style={Z.statLbl}>This month</div></div>
+              <div style={Z.statCard}><div style={{...Z.statNum,color:"#C9A15A"}}>{compCount}</div><div style={Z.statLbl}>Competitions</div></div>
+              <div style={Z.statCard}><div style={{...Z.statNum,color:"#EDEFF2"}}>{lifetime}</div><div style={Z.statLbl}>Lifetime points</div></div>
+            </div>
+
+            {/* Duel record */}
+            <div style={Z.statsSection}>
+              <div style={Z.statsSectionTitle}>Duel Record</div>
+              <div style={Z.duelRecordRow}>
+                <span style={{color:"#3E9B7F",fontWeight:700}}>{record.w}W</span>
+                <span style={{color:"#8B95A3"}}>–</span>
+                <span style={{color:"#B33A3A",fontWeight:700}}>{record.l}L</span>
+                {totalDuels>0&&<span style={Z.winPct}>· {winPct}% win rate</span>}
+              </div>
+            </div>
+
+            {/* Signature techniques */}
+            <div style={Z.statsSection}>
+              <div style={Z.statsSectionTitle}>Signature Techniques</div>
+              {topTags.length===0 ? (
+                <div style={Z.statsEmpty}>Tag techniques when you log a class to see your top moves here.</div>
+              ) : (
+                <div style={Z.tagBars}>
+                  {topTags.map(([tag,count])=>(
+                    <div key={tag} style={Z.tagBarRow}>
+                      <span style={Z.tagBarLabel}>{tag}</span>
+                      <div style={Z.tagBarTrack}><div style={{...Z.tagBarFill,width:`${(count/maxTag)*100}%`,background:warrior.accent}}/></div>
+                      <span style={Z.tagBarCount}>{count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {navBar}
+          </div>
+          );
       })()}
 
       {screen==="more"&&warrior&&(
@@ -1789,6 +1856,24 @@ const Z={
   moreItemName:{fontSize:14.5,fontWeight:700,color:"#EDEFF2"},
   moreItemSub:{fontSize:11.5,color:"#8B95A3",marginTop:2},
   moreChevron:{fontSize:22,color:"#5D6673",fontWeight:400},
+  statsWrap:{height:"100%",display:"flex",flexDirection:"column",padding:"44px 20px 74px",overflowY:"auto"},
+  statsTitle:{fontFamily:"'Bebas Neue', sans-serif",fontSize:32,margin:"0 0 2px"},
+  statsSub:{fontSize:12,color:"#8B95A3",marginBottom:16},
+  statsGrid:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:9,marginBottom:18},
+  statCard:{background:"#1D232D",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"12px 8px",textAlign:"center"},
+  statNum:{fontFamily:"'Bebas Neue', sans-serif",fontSize:26,lineHeight:1},
+  statLbl:{fontSize:10,color:"#8B95A3",marginTop:4},
+  statsSection:{marginBottom:18},
+  statsSectionTitle:{fontSize:13,fontWeight:700,color:"#EDEFF2",marginBottom:10},
+  duelRecordRow:{display:"flex",alignItems:"center",gap:8,background:"#1D232D",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"14px 16px",fontFamily:"'Bebas Neue', sans-serif",fontSize:22},
+  winPct:{fontFamily:"'Inter',sans-serif",fontSize:12,fontWeight:600,color:"#8B95A3",marginLeft:4},
+  statsEmpty:{fontSize:12.5,lineHeight:1.5,color:"#5D6673",background:"#1D232D",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"14px 16px"},
+  tagBars:{display:"flex",flexDirection:"column",gap:9},
+  tagBarRow:{display:"flex",alignItems:"center",gap:10},
+  tagBarLabel:{fontSize:12,fontWeight:600,color:"#D5DAE1",width:80,flexShrink:0},
+  tagBarTrack:{flex:1,height:10,background:"rgba(255,255,255,0.08)",borderRadius:5,overflow:"hidden"},
+  tagBarFill:{height:"100%",borderRadius:5},
+  tagBarCount:{fontFamily:"'Bebas Neue', sans-serif",fontSize:16,color:"#EDEFF2",width:22,textAlign:"right",flexShrink:0},
   schedAddBox:{background:"#181D26",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 14px 16px"},
   schedAddLabel:{fontSize:13,fontWeight:700,color:"#EDEFF2",marginBottom:10},
   schedDayPicker:{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"},
