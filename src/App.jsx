@@ -856,6 +856,8 @@ export default function App(){
   const [lockedZone,setLockedZone]=useState(null);// {result, at} freeze marker on tap
   const [homeField,setHomeField]=useState(null);  // "you" | "opp" — whose home turf this duel is on
   const [slash,setSlash]=useState(null);          // "you" | "opp" | null — triggers sword-slash flash
+  const [roundWins,setRoundWins]=useState({you:0,opp:0}); // best-of-3 round score
+  const [roundNum,setRoundNum]=useState(1);        // 1, 2, or 3 (decider)
   const markerRef=useRef({dir:1,raf:null,active:false});
   const [popups,setPopups]=useState([]);
   const [anim,setAnim]=useState(null);
@@ -940,7 +942,7 @@ export default function App(){
   function goHome(){setScreen("home");}
   function goProfileSetup(){setScreen("profileSetup");}
   function goProfile(){setScreen("profile");}
-  function goDuel(){stopMarker();setDuelPhase("idle");setDuelResult(null);setHpYou(100);setHpOpp(100);setDuelLog("");setLockedZone(null);setHomeField(null);setScreen("duel");}
+  function goDuel(){stopMarker();setDuelPhase("idle");setDuelResult(null);setHpYou(100);setHpOpp(100);setDuelLog("");setLockedZone(null);setHomeField(null);setRoundWins({you:0,opp:0});setRoundNum(1);setScreen("duel");}
   function goShop(){setScreen("shop");}
   function goBoard(){setScreen("board");}
   function goHistory(){setScreen("history");}
@@ -1075,9 +1077,15 @@ export default function App(){
   function markerSpeed(forKey){
     // opponent's rank makes it harder to read regardless of who's attacking;
     // the attacking warrior's own style (speedMod) layers on top of that.
+    // Round 3 (the decider) sweeps noticeably faster — real pressure.
     const bal=WARRIOR_BALANCE[forKey]||{};
-    return 1.7 + oppTier*0.25 + (bal.speedMod||0);
+    const roundBoost = roundNum>=3 ? 1.3 : 0; // decider is faster
+    return 1.9 + oppTier*0.28 + (bal.speedMod||0) + roundBoost;
   }
+  // How much tighter the timing zones get this round (subtracted from zone widths).
+  function roundZonePenalty(){ return roundNum>=3 ? 3 : 0; }
+  // Opponent damage multiplier per round (decider hits harder).
+  function roundDmgMult(){ return roundNum>=3 ? 1.25 : 1; }
 
   function stopMarker(){
     markerRef.current.active=false;
@@ -1101,20 +1109,31 @@ export default function App(){
   }
 
   function startDuel(){
-    setHpYou(100);setHpOpp(100);setDuelResult(null);
-    // Randomly decide whose home turf we fight on (adds variety).
+    // Fresh best-of-3 match
+    setRoundWins({you:0,opp:0});
+    setRoundNum(1);
+    setDuelResult(null);
+    // Randomly decide whose home turf we fight on (adds variety) — set once per match.
     const home=Math.random()<0.5?"you":"opp";
     setHomeField(home);
-    const fieldName = home==="you" ? warrior.name : WARRIORS[oppKey].name;
-    setDuelLog(`${fieldName}'s home field! ${home==="you"?"You have":"They have"} the edge. Your attack — tap center!`);
+    startRound(1, home);
+  }
+  function startRound(num, home){
+    setHpYou(100);setHpOpp(100);
     setLockedZone(null);setMarkerPos(0);
+    const fieldName = home==="you" ? warrior.name : WARRIORS[oppKey].name;
+    const roundLabel = num===3 ? "FINAL ROUND — faster & tighter!" : `Round ${num}`;
+    setDuelLog(`${roundLabel}${num===1?` · ${fieldName}'s home field`:""} — your attack, tap center!`);
     setDuelPhase("attack");
     startMarker(markerSpeed(warriorKey));
   }
 
   // Judge where the marker landed relative to center (50)
   function judge(tier,phase,forKey){
-    const {perfect,good}=zoneFor(tier,phase,forKey);
+    let {perfect,good}=zoneFor(tier,phase,forKey);
+    const pen=roundZonePenalty();
+    perfect=Math.max(2,perfect-pen);
+    good=Math.max(perfect+3,good-pen);
     const d=Math.abs(markerPos-50);
     if(d<=perfect) return "perfect";
     if(d<=good) return "good";
@@ -1139,7 +1158,7 @@ export default function App(){
       setDuelLog(line);
       setDuelPhase("resolve");
       setTimeout(()=>{
-        if(newOpp<=0){finishDuel(true);return;}
+        if(newOpp<=0){endRound(true);return;}
         // opponent attacks, you defend
         setDuelLog(`${WARRIORS[oppKey].name} attacks — tap to block!`);
         setLockedZone(null);setMarkerPos(0);
@@ -1151,11 +1170,11 @@ export default function App(){
       const res=judge(myTier,"defend",warriorKey);
       setLockedZone({result:res,at:markerPos});
       // opponent's raw damage, reduced by how well you blocked.
-      // On the opponent's home field, they hit a bit harder.
       const oppBal=WARRIOR_BALANCE[oppKey]||{};
       let raw=baseDmg(oppTier,oppKey)+Math.round(Math.random()*6);
       if(oppBal.dmgPctBonus){raw=Math.round(raw*(1+oppBal.dmgPctBonus));}
       if(homeField==="opp") raw=Math.round(raw*1.2);
+      raw=Math.round(raw*roundDmgMult()); // decider round hits harder
       let dmg=0,line="";
       if(res==="perfect"){dmg=0;line="Perfect block! No damage.";}
       else if(res==="good"){dmg=Math.round(raw*0.5);line=`Partial block — took ${dmg}.`;}
@@ -1166,13 +1185,34 @@ export default function App(){
       setDuelLog(line);
       setDuelPhase("resolve");
       setTimeout(()=>{
-        if(newYou<=0){finishDuel(false);return;}
+        if(newYou<=0){endRound(false);return;}
         setDuelLog("Your attack — tap in the center!");
         setLockedZone(null);setMarkerPos(0);
         setDuelPhase("attack");
         startMarker(markerSpeed(warriorKey));
       },1100);
     }
+  }
+
+  // A round ended. Update round score; if someone hit 2 wins, the match is over.
+  function endRound(youWonRound){
+    stopMarker();
+    const nextWins = youWonRound
+      ? {you:roundWins.you+1, opp:roundWins.opp}
+      : {you:roundWins.you, opp:roundWins.opp+1};
+    setRoundWins(nextWins);
+    if(nextWins.you>=2 || nextWins.opp>=2){
+      finishDuel(nextWins.you>=2);
+      return;
+    }
+    // Otherwise, briefly show the round result, then start the next round.
+    const nextRoundNum = nextWins.you + nextWins.opp + 1;
+    setDuelPhase("roundbreak");
+    setDuelLog(youWonRound ? "You took the round!" : `${WARRIORS[oppKey].name} took the round.`);
+    setTimeout(()=>{
+      setRoundNum(nextRoundNum);
+      startRound(nextRoundNum, homeField);
+    },1600);
   }
 
   function finishDuel(win){
@@ -1436,6 +1476,7 @@ export default function App(){
         const opp=WARRIORS[oppKey];
         const active=duelPhase==="attack"||duelPhase==="defend";
         const clashing=duelPhase==="resolve";
+        const inMatch=["attack","defend","resolve","roundbreak"].includes(duelPhase);
         const isAttack=duelPhase==="attack";
         const {perfect,good}=zoneFor(myTier,isAttack?"attack":"defend",warriorKey);
         // Whose field are we on? During the fight, the home fighter's line sets the scene.
@@ -1449,6 +1490,19 @@ export default function App(){
           <div style={Z.duelWrap}>
             <button style={Z.backBtn} onClick={()=>{stopMarker();goHome();}}>← Back</button>
             <div style={Z.recRow}><span style={Z.recText}>{record.w}W — {record.l}L</span></div>
+
+            {/* Best-of-3 round score */}
+            {inMatch&&(
+              <div style={Z.roundScoreRow}>
+                <div style={Z.roundDots}>
+                  {[0,1].map((i)=><div key={"y"+i} style={{...Z.roundDot,background:i<roundWins.you?warrior.accent:"rgba(255,255,255,0.15)"}}/>)}
+                </div>
+                <span style={{...Z.roundLabel,color:roundNum>=3?"#E85A3A":"#8B95A3"}}>{roundNum>=3?"FINAL ROUND":`Round ${roundNum}`}</span>
+                <div style={Z.roundDots}>
+                  {[0,1].map((i)=><div key={"o"+i} style={{...Z.roundDot,background:i<roundWins.opp?opp.accent:"rgba(255,255,255,0.15)"}}/>)}
+                </div>
+              </div>
+            )}
 
             {/* HP bars */}
             <div style={{display:"flex",gap:12,marginBottom:8}}>
@@ -1521,14 +1575,19 @@ export default function App(){
               </div>
             )}
 
+            {/* Between-rounds banner */}
+            {duelPhase==="roundbreak"&&(
+              <div style={{...Z.roundBreak,animation:"fadeIn 0.3s ease-out"}}>{duelLog}</div>
+            )}
+
             {/* Result */}
-            {duelPhase==="result"&&duelResult&&(<div key={record.w+record.l} style={{...Z.resBox,animation:"fadeIn 0.4s ease-out"}}><div style={{...Z.resBanner,color:duelResult.win?"#3E9B7F":"#B33A3A"}}>{duelResult.win?"Victory":"Defeat"}</div><p style={Z.narr}>{duelResult.narration}</p></div>)}
+            {duelPhase==="result"&&duelResult&&(<div key={record.w+record.l} style={{...Z.resBox,animation:"fadeIn 0.4s ease-out"}}><div style={{...Z.resBanner,color:duelResult.win?"#3E9B7F":"#B33A3A"}}>{duelResult.win?"Victory":"Defeat"}</div><p style={Z.narr}>{duelResult.narration}</p><div style={Z.finalScore}>Rounds: {roundWins.you}–{roundWins.opp}</div></div>)}
 
             {/* Action button */}
             <div style={{marginTop:"auto"}}>
-              {duelPhase==="idle"&&<button className="act" style={Z.duelBtn} onClick={startDuel}>Start Duel</button>}
-              {(active||clashing)&&<div style={Z.rankNote}>Higher rank = wider gold zone & harder hits. Time it well to upset a higher rank.</div>}
-              {duelPhase==="result"&&<button className="act" style={Z.duelBtn} onClick={()=>{setDuelPhase("idle");setDuelResult(null);setHpYou(100);setHpOpp(100);setDuelLog("");setLockedZone(null);}}>Rematch</button>}
+              {duelPhase==="idle"&&<button className="act" style={Z.duelBtn} onClick={startDuel}>Start Duel · Best of 3</button>}
+              {(active||clashing)&&<div style={Z.rankNote}>Win 2 rounds to take the duel. The decider is faster & tighter.</div>}
+              {duelPhase==="result"&&<button className="act" style={Z.duelBtn} onClick={()=>{setDuelPhase("idle");setDuelResult(null);setHpYou(100);setHpOpp(100);setDuelLog("");setLockedZone(null);setRoundWins({you:0,opp:0});setRoundNum(1);}}>Rematch</button>}
               <p style={Z.fn}>For fun — no training points at stake</p>
             </div>
           </div>
@@ -1891,6 +1950,12 @@ const Z={
   duelWrap:{height:"100%",display:"flex",flexDirection:"column",padding:"36px 18px 22px"},
   backBtn:{background:"none",color:"#8B95A3",fontSize:13,textAlign:"left",padding:0,marginBottom:6},
   recRow:{textAlign:"center",marginBottom:6},recText:{fontFamily:"'Bebas Neue', sans-serif",fontSize:18,color:"#C9A15A",letterSpacing:0.5},
+  roundScoreRow:{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:8},
+  roundDots:{display:"flex",gap:5},
+  roundDot:{width:10,height:10,borderRadius:"50%"},
+  roundLabel:{fontFamily:"'Bebas Neue', sans-serif",fontSize:15,letterSpacing:0.5,minWidth:96,textAlign:"center"},
+  roundBreak:{textAlign:"center",fontFamily:"'Bebas Neue', sans-serif",fontSize:22,color:"#EDEFF2",letterSpacing:0.5,padding:"18px 0"},
+  finalScore:{fontSize:12,color:"#8B95A3",marginTop:6,fontWeight:600},
   hpTrack:{height:6,background:"rgba(255,255,255,0.08)",borderRadius:3,overflow:"hidden"},hpFill:{height:"100%",borderRadius:3},
   arena:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,padding:"0 4px"},
   fCol:{display:"flex",flexDirection:"column",alignItems:"center",gap:4},
