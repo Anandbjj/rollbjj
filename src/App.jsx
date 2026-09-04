@@ -857,7 +857,8 @@ export default function App(){
   const [homeField,setHomeField]=useState(null);  // "you" | "opp" — whose home turf this duel is on
   const [slash,setSlash]=useState(null);          // "you" | "opp" | null — triggers sword-slash flash
   const [roundWins,setRoundWins]=useState({you:0,opp:0}); // best-of-3 round score
-  const [roundNum,setRoundNum]=useState(1);        // 1, 2, or 3 (decider)
+  const [roundNum,setRoundNum]=useState(1);        // current round number
+  const [matchFormat,setMatchFormat]=useState(3);  // total rounds: 1, 3, or 5 (best-of)
   const markerRef=useRef({dir:1,raf:null,active:false});
   const [popups,setPopups]=useState([]);
   const [anim,setAnim]=useState(null);
@@ -1074,18 +1075,21 @@ export default function App(){
     const bal=WARRIOR_BALANCE[forKey]||{};
     return 16+tier*3+(bal.dmgMod||0);
   }
+  // Rounds a player needs to win the whole match.
+  const roundsToWin = Math.ceil(matchFormat/2);
+  // Is the current round a "decider"? (both players one win from taking the match,
+  // or a single-round match, or match point in general) — these ramp up in difficulty.
+  function isDecider(){
+    if(matchFormat===1) return true;
+    return roundWins.you===roundsToWin-1 && roundWins.opp===roundsToWin-1;
+  }
   function markerSpeed(forKey){
-    // opponent's rank makes it harder to read regardless of who's attacking;
-    // the attacking warrior's own style (speedMod) layers on top of that.
-    // Round 3 (the decider) sweeps noticeably faster — real pressure.
     const bal=WARRIOR_BALANCE[forKey]||{};
-    const roundBoost = roundNum>=3 ? 1.3 : 0; // decider is faster
+    const roundBoost = isDecider() ? 1.3 : 0; // decider is faster
     return 1.9 + oppTier*0.28 + (bal.speedMod||0) + roundBoost;
   }
-  // How much tighter the timing zones get this round (subtracted from zone widths).
-  function roundZonePenalty(){ return roundNum>=3 ? 3 : 0; }
-  // Opponent damage multiplier per round (decider hits harder).
-  function roundDmgMult(){ return roundNum>=3 ? 1.25 : 1; }
+  function roundZonePenalty(){ return isDecider() ? 3 : 0; }
+  function roundDmgMult(){ return isDecider() ? 1.25 : 1; }
 
   function stopMarker(){
     markerRef.current.active=false;
@@ -1122,8 +1126,9 @@ export default function App(){
     setHpYou(100);setHpOpp(100);
     setLockedZone(null);setMarkerPos(0);
     const fieldName = home==="you" ? warrior.name : WARRIORS[oppKey].name;
-    const roundLabel = num===3 ? "FINAL ROUND — faster & tighter!" : `Round ${num}`;
-    setDuelLog(`${roundLabel}${num===1?` · ${fieldName}'s home field`:""} — your attack, tap center!`);
+    const decider = isDecider();
+    const roundLabel = decider ? "DECIDER — faster & tighter!" : (matchFormat===1?"One round — winner takes all":`Round ${num}`);
+    setDuelLog(`${roundLabel}${num===1&&!decider?` · ${fieldName}'s home field`:""} — your attack, tap center!`);
     setDuelPhase("attack");
     startMarker(markerSpeed(warriorKey));
   }
@@ -1201,8 +1206,8 @@ export default function App(){
       ? {you:roundWins.you+1, opp:roundWins.opp}
       : {you:roundWins.you, opp:roundWins.opp+1};
     setRoundWins(nextWins);
-    if(nextWins.you>=2 || nextWins.opp>=2){
-      finishDuel(nextWins.you>=2);
+    if(nextWins.you>=roundsToWin || nextWins.opp>=roundsToWin){
+      finishDuel(nextWins.you>=roundsToWin);
       return;
     }
     // Otherwise, briefly show the round result, then start the next round.
@@ -1491,15 +1496,15 @@ export default function App(){
             <button style={Z.backBtn} onClick={()=>{stopMarker();goHome();}}>← Back</button>
             <div style={Z.recRow}><span style={Z.recText}>{record.w}W — {record.l}L</span></div>
 
-            {/* Best-of-3 round score */}
-            {inMatch&&(
+            {/* Best-of-N round score */}
+            {inMatch&&matchFormat>1&&(
               <div style={Z.roundScoreRow}>
                 <div style={Z.roundDots}>
-                  {[0,1].map((i)=><div key={"y"+i} style={{...Z.roundDot,background:i<roundWins.you?warrior.accent:"rgba(255,255,255,0.15)"}}/>)}
+                  {Array.from({length:roundsToWin}).map((_,i)=><div key={"y"+i} style={{...Z.roundDot,background:i<roundWins.you?warrior.accent:"rgba(255,255,255,0.15)"}}/>)}
                 </div>
-                <span style={{...Z.roundLabel,color:roundNum>=3?"#E85A3A":"#8B95A3"}}>{roundNum>=3?"FINAL ROUND":`Round ${roundNum}`}</span>
+                <span style={{...Z.roundLabel,color:isDecider()?"#E85A3A":"#8B95A3"}}>{isDecider()?"DECIDER":`Round ${roundNum}`}</span>
                 <div style={Z.roundDots}>
-                  {[0,1].map((i)=><div key={"o"+i} style={{...Z.roundDot,background:i<roundWins.opp?opp.accent:"rgba(255,255,255,0.15)"}}/>)}
+                  {Array.from({length:roundsToWin}).map((_,i)=><div key={"o"+i} style={{...Z.roundDot,background:i<roundWins.opp?opp.accent:"rgba(255,255,255,0.15)"}}/>)}
                 </div>
               </div>
             )}
@@ -1555,6 +1560,15 @@ export default function App(){
             {duelPhase==="idle"&&(<>
               <div style={Z.oppTabs}>{Object.entries(WARRIORS).filter(([k])=>k!==warriorKey).map(([key,w])=>(<button key={key} className="stp" onClick={()=>{setOppKey(key);}} style={{...Z.tab,borderColor:oppKey===key?w.accent:"rgba(255,255,255,0.1)",color:oppKey===key?w.accent:"#5D6673"}}>{w.name.split(" ")[0]}</button>))}</div>
               <div style={Z.stepperRow}><span style={Z.stepText}>Opponent rank</span><button className="stp" style={Z.stepBtn} onClick={()=>setOppTier((t)=>Math.max(0,t-1))}>−</button><span style={Z.stepText}>{oppTier+1}</span><button className="stp" style={Z.stepBtn} onClick={()=>setOppTier((t)=>Math.min(3,t+1))}>+</button></div>
+              <div style={Z.formatLabel}>Match length</div>
+              <div style={Z.formatSeg}>
+                {[{v:1,l:"1 Round"},{v:3,l:"Best of 3"},{v:5,l:"Best of 5"}].map((f)=>(
+                  <button key={f.v} className="stp" onClick={()=>setMatchFormat(f.v)}
+                    style={{...Z.formatSegBtn,...(matchFormat===f.v?{background:warrior.accent,color:"#14181F"}:{})}}>
+                    {f.l}
+                  </button>
+                ))}
+              </div>
             </>)}
 
             {/* Timing bar (during attack/defend/resolve) */}
@@ -1585,7 +1599,7 @@ export default function App(){
 
             {/* Action button */}
             <div style={{marginTop:"auto"}}>
-              {duelPhase==="idle"&&<button className="act" style={Z.duelBtn} onClick={startDuel}>Start Duel · Best of 3</button>}
+              {duelPhase==="idle"&&<button className="act" style={Z.duelBtn} onClick={startDuel}>Start Duel · {matchFormat===1?"1 Round":`Best of ${matchFormat}`}</button>}
               {(active||clashing)&&<div style={Z.rankNote}>Win 2 rounds to take the duel. The decider is faster & tighter.</div>}
               {duelPhase==="result"&&<button className="act" style={Z.duelBtn} onClick={()=>{setDuelPhase("idle");setDuelResult(null);setHpYou(100);setHpOpp(100);setDuelLog("");setLockedZone(null);setRoundWins({you:0,opp:0});setRoundNum(1);}}>Rematch</button>}
               <p style={Z.fn}>For fun — no training points at stake</p>
@@ -1973,6 +1987,9 @@ const Z={
   narr:{fontSize:12.5,lineHeight:1.5,color:"#D5DAE1",margin:0},
   duelBtn:{width:"100%",padding:"14px 20px",background:"#C9A15A",color:"#14181F",borderRadius:14,fontSize:15,fontWeight:700},
   stepperRow:{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:8},
+  formatLabel:{fontSize:11,color:"#8B95A3",textAlign:"center",marginBottom:6,fontWeight:600},
+  formatSeg:{display:"flex",gap:0,background:"#12161C",border:"1px solid rgba(255,255,255,0.1)",borderRadius:10,overflow:"hidden",marginBottom:10},
+  formatSegBtn:{flex:1,padding:"9px 0",background:"transparent",border:"none",color:"#8B95A3",fontSize:12,fontWeight:700,transition:"background 0.15s"},
   duelLog:{fontSize:12.5,fontWeight:600,textAlign:"center",marginBottom:6,minHeight:16},
   timingTrack:{position:"relative",height:26,background:"#12161C",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,cursor:"pointer",overflow:"visible"},
   timingHint:{fontSize:10,color:"#8B95A3",textAlign:"center",marginTop:5,letterSpacing:1,fontWeight:600},
