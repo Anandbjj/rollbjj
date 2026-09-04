@@ -769,6 +769,9 @@ const SHOP_ITEMS=[
 const TAG_OPTIONS = ["Triangle","Armbar","Kimura","Guillotine","RNC","Ankle Lock","Americana","Sweep","Takedown","Guard Pass","Escape","Back Take"];
 // Strength/conditioning session types (tracked separately — never award warrior points).
 const STRENGTH_TYPES = ["Lifting","Conditioning","Mobility","Cardio"];
+// Default minutes for a BJJ class breakdown. Pre-filled so logging stays one-tap;
+// users can adjust per-session but never have to. (Mirrors IU BJJ's typical class.)
+const DEFAULT_BREAKDOWN = { warmup:30, drilling:60, rolling:60 };
 
 function formatDate(d){
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -871,6 +874,7 @@ export default function App(){
   const [draftTags,setDraftTags]=useState([]);
   const [draftNote,setDraftNote]=useState("");
   const [showNoteBox,setShowNoteBox]=useState(false);
+  const [draftBreakdown,setDraftBreakdown]=useState(DEFAULT_BREAKDOWN);
   // ─── Strength/conditioning logging (separate track — no warrior points) ───
   const [strengthModalOpen,setStrengthModalOpen]=useState(false);
   const [strengthType,setStrengthType]=useState("Lifting");
@@ -987,7 +991,7 @@ export default function App(){
     setSessions((s)=>[entry,...s]);
     // Only BJJ classes/comps get the optional technique-tag prompt.
     if(type==="class"||type==="competition"){
-      setDetailPrompt(id);setDraftTags([]);setDraftNote("");setShowNoteBox(false);
+      setDetailPrompt(id);setDraftTags([]);setDraftNote("");setShowNoteBox(false);setDraftBreakdown(DEFAULT_BREAKDOWN);
     }
   }
   function logClass(){gain(1,"+1 point");setStreak((s)=>s+1);addSession(1,"class");setLastClassLogStr(new Date().toDateString());}
@@ -1074,8 +1078,8 @@ export default function App(){
     addSession(5,"competition",{eventName:name});
   }
   function toggleTag(tag){setDraftTags((t)=>t.includes(tag)?t.filter((x)=>x!==tag):[...t,tag]);}
-  function saveDetails(){setSessions((all)=>all.map((s)=>s.id===detailPrompt?{...s,tags:draftTags,note:draftNote}:s));setDetailPrompt(null);}
-  function skipDetails(){setDetailPrompt(null);}
+  function saveDetails(){setSessions((all)=>all.map((s)=>s.id===detailPrompt?{...s,tags:draftTags,note:draftNote,breakdown:s.type==="class"?draftBreakdown:undefined}:s));setDetailPrompt(null);}
+  function skipDetails(){setSessions((all)=>all.map((s)=>s.id===detailPrompt&&s.type==="class"?{...s,breakdown:DEFAULT_BREAKDOWN}:s));setDetailPrompt(null);}
   function tapWarrior(){if(anim)return;triggerAnim("attack",500);addPopup("⚔",warrior.accent);}
 
   // ─── Interactive duel: timing-bar engine ───
@@ -1688,6 +1692,17 @@ export default function App(){
         const lifetime=Object.values(warriorProgress).reduce((a,b)=>a+b,0);
         const totalDuels=record.w+record.l;
         const winPct=totalDuels?Math.round((record.w/totalDuels)*100):0;
+        // All-time BJJ time breakdown (from class breakdowns)
+        const bd=sessions.reduce((acc,s)=>{
+          if(s.type==="class"&&s.breakdown){
+            acc.warmup+=s.breakdown.warmup||0;
+            acc.drilling+=s.breakdown.drilling||0;
+            acc.rolling+=s.breakdown.rolling||0;
+          }
+          return acc;
+        },{warmup:0,drilling:0,rolling:0});
+        const bdTotal=bd.warmup+bd.drilling+bd.rolling;
+        const fmtHrs=(m)=>{const h=Math.floor(m/60);const mm=m%60;return h>0?`${h}h ${mm}m`:`${mm}m`;};
         return (
           <div style={Z.statsWrap}>
             <h2 style={Z.statsTitle}>Your Stats</h2>
@@ -1701,6 +1716,26 @@ export default function App(){
               <div style={Z.statCard}><div style={{...Z.statNum,color:"#5AB48C"}}>{thisMonth}</div><div style={Z.statLbl}>This month</div></div>
               <div style={Z.statCard}><div style={{...Z.statNum,color:"#C9A15A"}}>{compCount}</div><div style={Z.statLbl}>Competitions</div></div>
               <div style={Z.statCard}><div style={{...Z.statNum,color:"#8B9EE8"}}>{strengthCount}</div><div style={Z.statLbl}>Strength{strengthMins>0?` · ${strengthMins}m`:""}</div></div>
+            </div>
+
+            {/* All-time mat time breakdown */}
+            <div style={Z.statsSection}>
+              <div style={Z.statsSectionTitle}>All-Time Mat Time</div>
+              {bdTotal===0 ? (
+                <div style={Z.statsEmpty}>Log a class to start tracking your warm-up, drilling, and rolling time.</div>
+              ) : (
+                <>
+                  <div style={Z.matTotalRow}>{fmtHrs(bdTotal)} <span style={Z.matTotalSub}>total on the mat</span></div>
+                  {[["rolling","Live rolling","#B33A3A"],["drilling","Drilling","#C9A15A"],["warmup","Warm-up","#5AB48C"]].map(([k,label,col])=>(
+                    <div key={k} style={Z.tagBarRow}>
+                      <span style={Z.tagBarLabel}>{label}</span>
+                      <div style={Z.tagBarTrack}><div style={{...Z.tagBarFill,width:`${bdTotal?(bd[k]/bdTotal)*100:0}%`,background:col}}/></div>
+                      <span style={{...Z.tagBarCount,width:48}}>{fmtHrs(bd[k])}</span>
+                    </div>
+                  ))}
+                  <div style={Z.matNote}>Live rolling is the number that matters most — that's real mat time.</div>
+                </>
+              )}
             </div>
 
             {/* Duel record */}
@@ -1955,10 +1990,34 @@ export default function App(){
         </div>
       )}
 
-      {warrior&&detailPrompt!==null&&(
+      {warrior&&detailPrompt!==null&&(()=>{
+        const editing = sessions.find((s)=>s.id===detailPrompt);
+        const isClass = editing?.type==="class";
+        const bd = draftBreakdown;
+        const setBd = (k,v)=>setDraftBreakdown((b)=>({...b,[k]:Math.max(0,v)}));
+        const totalMin = bd.warmup+bd.drilling+bd.rolling;
+        return (
         <div style={Z.detailOverlay}>
           <div style={Z.detailSheet}>
             <div style={Z.detailTitle}>Add details? <span style={Z.detailOptional}>(optional)</span></div>
+
+            {isClass&&(
+              <div style={{marginBottom:14}}>
+                <div style={Z.pfLabel}>Time breakdown · {Math.floor(totalMin/60)}h {totalMin%60}m total</div>
+                {[["warmup","Warm-up"],["drilling","Drilling"],["rolling","Live rolling"]].map(([k,label])=>(
+                  <div key={k} style={Z.bdRow}>
+                    <span style={Z.bdLabel}>{label}</span>
+                    <div style={Z.bdStepper}>
+                      <button className="stp" style={Z.bdBtn} onClick={()=>setBd(k,bd[k]-15)}>−</button>
+                      <span style={Z.bdVal}>{bd[k]}m</span>
+                      <button className="stp" style={Z.bdBtn} onClick={()=>setBd(k,bd[k]+15)}>+</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={Z.pfLabel}>Techniques</div>
             <div style={Z.tagGrid}>
               {TAG_OPTIONS.map((tag)=>(
                 <button key={tag} className="stp" onClick={()=>toggleTag(tag)}
@@ -1980,7 +2039,8 @@ export default function App(){
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       </div></div>
     </div>
@@ -2091,6 +2151,14 @@ const Z={
   tagGrid:{display:"flex",flexWrap:"wrap",gap:7,marginBottom:10},
   tagChip:{padding:"7px 12px",borderRadius:18,fontSize:12.5,fontWeight:600,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
   durChip:{flex:1,padding:"9px 0",borderRadius:10,fontSize:13,fontWeight:700,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
+  bdRow:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8},
+  bdLabel:{fontSize:13,color:"#D5DAE1",fontWeight:600},
+  bdStepper:{display:"flex",alignItems:"center",gap:8},
+  bdBtn:{width:26,height:26,borderRadius:7,background:"#242A34",border:"1px solid rgba(255,255,255,0.12)",color:"#EDEFF2",fontSize:15,lineHeight:1},
+  bdVal:{fontSize:13,color:"#EDEFF2",fontWeight:700,minWidth:42,textAlign:"center"},
+  matTotalRow:{fontFamily:"'Bebas Neue', sans-serif",fontSize:26,color:"#EDEFF2",marginBottom:12},
+  matTotalSub:{fontFamily:"'Inter',sans-serif",fontSize:12,color:"#8B95A3",fontWeight:600,marginLeft:6},
+  matNote:{fontSize:11,color:"#5D6673",marginTop:8,fontStyle:"italic"},
   addNoteLink:{background:"none",color:"#8B95A3",fontSize:12.5,fontWeight:600,padding:"4px 0",textAlign:"left"},
   noteBox:{width:"100%",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,color:"#EDEFF2",fontSize:13,fontFamily:"'Inter',sans-serif",padding:"10px 12px",resize:"none",outline:"none"},
   skipBtn:{flex:1,padding:"13px 20px",background:"transparent",border:"1px solid rgba(255,255,255,0.15)",color:"#8B95A3",borderRadius:14,fontSize:14,fontWeight:600},
