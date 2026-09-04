@@ -767,6 +767,8 @@ const SHOP_ITEMS=[
 // Quick-tap technique tags for logging what happened in a session.
 // Tapping is fast (no typing); an optional note box exists for anyone who wants to type more.
 const TAG_OPTIONS = ["Triangle","Armbar","Kimura","Guillotine","RNC","Ankle Lock","Americana","Sweep","Takedown","Guard Pass","Escape","Back Take"];
+// Strength/conditioning session types (tracked separately — never award warrior points).
+const STRENGTH_TYPES = ["Lifting","Conditioning","Mobility","Cardio"];
 
 function formatDate(d){
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -869,6 +871,10 @@ export default function App(){
   const [draftTags,setDraftTags]=useState([]);
   const [draftNote,setDraftNote]=useState("");
   const [showNoteBox,setShowNoteBox]=useState(false);
+  // ─── Strength/conditioning logging (separate track — no warrior points) ───
+  const [strengthModalOpen,setStrengthModalOpen]=useState(false);
+  const [strengthType,setStrengthType]=useState("Lifting");
+  const [strengthDuration,setStrengthDuration]=useState(45); // minutes
   // ─── Competition logging: requires naming the event + once-per-day cap ───
   const [compModalOpen,setCompModalOpen]=useState(false);
   const [compEventName,setCompEventName]=useState("");
@@ -975,13 +981,23 @@ export default function App(){
     setScreen("intro");
   }
   function gain(amount,label){const before=points,bT=THRESHOLDS.filter((t)=>before>=t).length-1;const after=before+amount,aT=THRESHOLDS.filter((t)=>after>=t).length-1;setWarriorProgress((p)=>({...p,[warriorKey]:after}));addPopup(label);triggerAnim("celebrate",900);if(aT>bT){setTimeout(()=>setScreen("evolve"),500);setTimeout(()=>setScreen("home"),2800);}}
-  function addSession(points,type,eventName=""){
+  function addSession(points,type,extra={}){
     const id=idRef.current++;
-    const entry={id,date:new Date().toISOString(),type,points,tags:[],note:"",eventName};
+    const entry={id,date:new Date().toISOString(),type,points,tags:[],note:"",eventName:"",...extra};
     setSessions((s)=>[entry,...s]);
-    setDetailPrompt(id);setDraftTags([]);setDraftNote("");setShowNoteBox(false);
+    // Only BJJ classes/comps get the optional technique-tag prompt.
+    if(type==="class"||type==="competition"){
+      setDetailPrompt(id);setDraftTags([]);setDraftNote("");setShowNoteBox(false);
+    }
   }
   function logClass(){gain(1,"+1 point");setStreak((s)=>s+1);addSession(1,"class");setLastClassLogStr(new Date().toDateString());}
+  function openStrengthModal(){setStrengthType("Lifting");setStrengthDuration(45);setStrengthModalOpen(true);}
+  function confirmStrength(){
+    // Strength sessions are tracked but award NO warrior points — keeps rank BJJ-only.
+    addSession(0,"strength",{strengthType,durationMin:strengthDuration});
+    setStrengthModalOpen(false);
+    addPopup("💪 Strength logged","#6A9EE8");
+  }
   function goSchedule(){setScreen("schedule");}
   function addClass(){
     if(addEnd<=addStart)return;
@@ -1055,7 +1071,7 @@ export default function App(){
     setCompModalOpen(false);
     gain(5,"+5 points");
     setStreak((s)=>s+1);
-    addSession(5,"competition",name);
+    addSession(5,"competition",{eventName:name});
   }
   function toggleTag(tag){setDraftTags((t)=>t.includes(tag)?t.filter((x)=>x!==tag):[...t,tag]);}
   function saveDetails(){setSessions((all)=>all.map((s)=>s.id===detailPrompt?{...s,tags:draftTags,note:draftNote}:s));setDetailPrompt(null);}
@@ -1459,7 +1475,10 @@ export default function App(){
           </div>
           <div style={Z.homeFoot}>
             <button className="act" style={{...Z.primaryBtn,background:warrior.accent}} onClick={logClass}>Log a class · +1</button>
-            <button className="act" style={{...Z.secBtn,width:"100%"}} onClick={openCompModal}>Competition · +5</button>
+            <div style={{display:"flex",gap:8}}>
+              <button className="act" style={{...Z.secBtn,flex:1}} onClick={openCompModal}>Competition · +5</button>
+              <button className="act" style={{...Z.secBtn,flex:1,borderColor:"rgba(106,158,232,0.4)",color:"#6A9EE8"}} onClick={openStrengthModal}>💪 Strength</button>
+            </div>
           </div>
           <div style={Z.popLayer}>{popups.map((p)=><div key={p.id} style={{...Z.popup,color:p.color}}>{p.text}</div>)}</div>
           </div>
@@ -1648,10 +1667,14 @@ export default function App(){
       })()}
 
       {screen==="stats"&&warrior&&(()=>{
-        const totalSessions=sessions.length;
+        const bjjSessions=sessions.filter((s)=>s.type==="class"||s.type==="competition");
+        const totalSessions=bjjSessions.length;
         const classCount=sessions.filter((s)=>s.type==="class").length;
         const compCount=sessions.filter((s)=>s.type==="competition").length;
-        // Sessions in the last 7 days
+        const strengthSessions=sessions.filter((s)=>s.type==="strength");
+        const strengthCount=strengthSessions.length;
+        const strengthMins=strengthSessions.reduce((a,s)=>a+(s.durationMin||0),0);
+        // Sessions in the last 7 days (all types)
         const weekAgo=Date.now()-7*24*60*60*1000;
         const thisWeek=sessions.filter((s)=>new Date(s.date).getTime()>=weekAgo).length;
         // Sessions this calendar month
@@ -1672,12 +1695,12 @@ export default function App(){
 
             {/* Top metric grid */}
             <div style={Z.statsGrid}>
-              <div style={Z.statCard}><div style={{...Z.statNum,color:warrior.accent}}>{totalSessions}</div><div style={Z.statLbl}>Total sessions</div></div>
+              <div style={Z.statCard}><div style={{...Z.statNum,color:warrior.accent}}>{totalSessions}</div><div style={Z.statLbl}>BJJ sessions</div></div>
               <div style={Z.statCard}><div style={{...Z.statNum,color:"#E8935A"}}>🔥 {streak}</div><div style={Z.statLbl}>Week streak</div></div>
               <div style={Z.statCard}><div style={{...Z.statNum,color:"#6A9EE8"}}>{thisWeek}</div><div style={Z.statLbl}>Last 7 days</div></div>
               <div style={Z.statCard}><div style={{...Z.statNum,color:"#5AB48C"}}>{thisMonth}</div><div style={Z.statLbl}>This month</div></div>
               <div style={Z.statCard}><div style={{...Z.statNum,color:"#C9A15A"}}>{compCount}</div><div style={Z.statLbl}>Competitions</div></div>
-              <div style={Z.statCard}><div style={{...Z.statNum,color:"#EDEFF2"}}>{lifetime}</div><div style={Z.statLbl}>Lifetime points</div></div>
+              <div style={Z.statCard}><div style={{...Z.statNum,color:"#8B9EE8"}}>{strengthCount}</div><div style={Z.statLbl}>Strength{strengthMins>0?` · ${strengthMins}m`:""}</div></div>
             </div>
 
             {/* Duel record */}
@@ -1857,15 +1880,22 @@ export default function App(){
                 <div key={s.id} style={Z.historyRow}>
                   <div style={Z.historyRowTop}>
                     <span style={Z.historyDate}>{formatDate(new Date(s.date))}</span>
-                    <span style={{...Z.historyType,color:s.type==="competition"?"#C9A15A":warrior.accent}}>{s.type==="competition"?"Competition":"Class"} · +{s.points}</span>
+                    {s.type==="strength" ? (
+                      <span style={{...Z.historyType,color:"#6A9EE8"}}>💪 {s.strengthType||"Strength"}</span>
+                    ) : (
+                      <span style={{...Z.historyType,color:s.type==="competition"?"#C9A15A":warrior.accent}}>{s.type==="competition"?"Competition":"Class"} · +{s.points}</span>
+                    )}
                   </div>
+                  {s.type==="strength"&&s.durationMin&&(
+                    <div style={Z.historyCompRow}><span style={Z.historyEventName}>{s.durationMin} min session</span></div>
+                  )}
                   {s.type==="competition"&&(
                     <div style={Z.historyCompRow}>
                       <span style={Z.historyEventName}>{s.eventName||"Competition"}</span>
                       <span style={Z.unverifiedPill}>Unverified</span>
                     </div>
                   )}
-                  {s.tags.length>0&&<div style={Z.historyTags}>{s.tags.map((t)=>(<span key={t} style={Z.historyTagPill}>{t}</span>))}</div>}
+                  {s.tags&&s.tags.length>0&&<div style={Z.historyTags}>{s.tags.map((t)=>(<span key={t} style={Z.historyTagPill}>{t}</span>))}</div>}
                   {s.note&&<p style={Z.historyNote}>{s.note}</p>}
                 </div>
               ))}
@@ -1889,6 +1919,37 @@ export default function App(){
             <div style={{display:"flex",gap:8,marginTop:12}}>
               <button className="act" style={Z.skipBtn} onClick={()=>setCompModalOpen(false)}>Cancel</button>
               <button className="act" style={{...Z.saveBtn,background:compEventName.trim()?warrior.accent:"#3A414D",opacity:compEventName.trim()?1:0.6}} onClick={confirmComp} disabled={!compEventName.trim()}>Log competition</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {warrior&&strengthModalOpen&&(
+        <div style={Z.detailOverlay}>
+          <div style={Z.detailSheet}>
+            <div style={Z.detailTitle}>Log strength session</div>
+            <p style={Z.compHint}>Tracked in your stats and streak — but strength doesn't earn warrior points. Your rank stays pure BJJ.</p>
+            <div style={Z.pfLabel}>Type</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:14}}>
+              {STRENGTH_TYPES.map((t)=>(
+                <button key={t} className="stp" onClick={()=>setStrengthType(t)}
+                  style={{...Z.tagChip,...(strengthType===t?{background:"#6A9EE8",borderColor:"#6A9EE8",color:"#14181F"}:{})}}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            <div style={Z.pfLabel}>Duration: {strengthDuration} min</div>
+            <div style={{display:"flex",gap:6,marginBottom:4}}>
+              {[15,30,45,60,90].map((m)=>(
+                <button key={m} className="stp" onClick={()=>setStrengthDuration(m)}
+                  style={{...Z.durChip,...(strengthDuration===m?{background:"#6A9EE8",borderColor:"#6A9EE8",color:"#14181F"}:{})}}>
+                  {m}
+                </button>
+              ))}
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:14}}>
+              <button className="act" style={Z.skipBtn} onClick={()=>setStrengthModalOpen(false)}>Cancel</button>
+              <button className="act" style={{...Z.saveBtn,background:"#6A9EE8"}} onClick={confirmStrength}>Log it</button>
             </div>
           </div>
         </div>
@@ -2029,6 +2090,7 @@ const Z={
   detailOptional:{fontSize:12,fontWeight:500,color:"#5D6673"},
   tagGrid:{display:"flex",flexWrap:"wrap",gap:7,marginBottom:10},
   tagChip:{padding:"7px 12px",borderRadius:18,fontSize:12.5,fontWeight:600,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
+  durChip:{flex:1,padding:"9px 0",borderRadius:10,fontSize:13,fontWeight:700,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
   addNoteLink:{background:"none",color:"#8B95A3",fontSize:12.5,fontWeight:600,padding:"4px 0",textAlign:"left"},
   noteBox:{width:"100%",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,color:"#EDEFF2",fontSize:13,fontFamily:"'Inter',sans-serif",padding:"10px 12px",resize:"none",outline:"none"},
   skipBtn:{flex:1,padding:"13px 20px",background:"transparent",border:"1px solid rgba(255,255,255,0.15)",color:"#8B95A3",borderRadius:14,fontSize:14,fontWeight:600},
