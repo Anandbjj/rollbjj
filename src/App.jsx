@@ -746,6 +746,16 @@ const QUESTIONS=[
 ];
 const THRESHOLDS=[0,10,25,50];
 
+// Standard adult BJJ belts. Rank is set by the user (promotions are the coach's real-world call).
+const BELTS = [
+  { key:"white",  name:"White",  color:"#E8E8E8", text:"#14181F" },
+  { key:"blue",   name:"Blue",   color:"#2E6FC9", text:"#FFFFFF" },
+  { key:"purple", name:"Purple", color:"#7B4Fc9", text:"#FFFFFF" },
+  { key:"brown",  name:"Brown",  color:"#6B4423", text:"#FFFFFF" },
+  { key:"black",  name:"Black",  color:"#1A1A1A", text:"#FFFFFF" },
+];
+function beltOf(key){ return BELTS.find((b)=>b.key===key) || BELTS[0]; }
+
 const SHOP_ITEMS=[
   {id:"aura_gold",name:"Golden Aura",price:"Free",desc:"A warm glow behind your warrior",color:"#C9A15A",owned:true},
   {id:"aura_ice",name:"Ice Aura",price:"$0.99",desc:"Frozen mist surrounds your fighter",color:"#6AC5E8",owned:false},
@@ -862,6 +872,10 @@ export default function App(){
   const [lastCompDateStr,setLastCompDateStr]=useState(saved?.lastCompDateStr ?? null);
   // ─── Schedule (editable) ───
   const [schedule,setSchedule]=useState(saved?.schedule ?? DEFAULT_SCHEDULE);
+  // ─── Profile (name, belt, stripes) ───
+  const [profileName,setProfileName]=useState(saved?.profileName ?? "");
+  const [belt,setBelt]=useState(saved?.belt ?? "white");
+  const [stripes,setStripes]=useState(saved?.stripes ?? 0);
   const [now,setNow]=useState(new Date());
   const [lastClassLogStr,setLastClassLogStr]=useState(saved?.lastClassLogStr ?? null); // toDateString of last class logged, to hide the prompt after logging
   const [addDay,setAddDay]=useState(2);
@@ -910,8 +924,9 @@ export default function App(){
     writeSave({
       warriorKey, warriorProgress, unlockedWarriors, streak,
       record, sessions, lastCompDateStr, schedule, lastClassLogStr,
+      profileName, belt, stripes,
     });
-  },[warriorKey,warriorProgress,unlockedWarriors,streak,record,sessions,lastCompDateStr,schedule,lastClassLogStr]);
+  },[warriorKey,warriorProgress,unlockedWarriors,streak,record,sessions,lastCompDateStr,schedule,lastClassLogStr,profileName,belt,stripes]);
 
   function setActiveWarrior(key){
     if(!unlockedWarriors.includes(key))return;
@@ -923,6 +938,8 @@ export default function App(){
   function startQuiz(){setQIndex(0);setTally({GW:0,PP:0,SC:0,SH:0,AN:0});setScreen("quiz");}
   function answer(a){const next={...tally,[a]:tally[a]+1};if(qIndex+1<QUESTIONS.length){setTally(next);setQIndex(qIndex+1);}else{let best="GW",bs=-1;Object.keys(next).forEach((k)=>{if(next[k]>bs){bs=next[k];best=k;}});setTally(next);const wk=ARCH_MAP[best];setWarriorKey(wk);setUnlockedWarriors([wk]);setOppKey(Object.keys(WARRIORS).find((k)=>k!==wk));setScreen("reveal");setTimeout(()=>setRevealed(true),80);}}
   function goHome(){setScreen("home");}
+  function goProfileSetup(){setScreen("profileSetup");}
+  function goProfile(){setScreen("profile");}
   function goDuel(){stopMarker();setDuelPhase("idle");setDuelResult(null);setHpYou(100);setHpOpp(100);setDuelLog("");setLockedZone(null);setHomeField(null);setScreen("duel");}
   function goShop(){setScreen("shop");}
   function goBoard(){setScreen("board");}
@@ -941,6 +958,9 @@ export default function App(){
     setLastCompDateStr(null);
     setLastClassLogStr(null);
     setSchedule(DEFAULT_SCHEDULE);
+    setProfileName("");
+    setBelt("white");
+    setStripes(0);
     setScreen("intro");
   }
   function gain(amount,label){const before=points,bT=THRESHOLDS.filter((t)=>before>=t).length-1;const after=before+amount,aT=THRESHOLDS.filter((t)=>after>=t).length-1;setWarriorProgress((p)=>({...p,[warriorKey]:after}));addPopup(label);triggerAnim("celebrate",900);if(aT>bT){setTimeout(()=>setScreen("evolve"),500);setTimeout(()=>setScreen("home"),2800);}}
@@ -1237,7 +1257,108 @@ export default function App(){
           <p style={Z.revArch}>{warrior.archetype}</p>
           <p style={Z.revTag}>{warrior.tagline}</p>
           <p style={Z.revDesc}>{warrior.desc}</p>
-          <button className="act" style={{...Z.primaryBtn,background:warrior.accent}} onClick={goHome}>Begin your journey</button>
+          <button className="act" style={{...Z.primaryBtn,background:warrior.accent}} onClick={goProfileSetup}>Begin your journey</button>
+        </div>
+      )}
+
+      {screen==="profileSetup"&&warrior&&(
+        <div style={Z.profileWrap}>
+          <div style={Z.profileKicker}>Set up your fighter card</div>
+          <h2 style={Z.profileTitle}>Who are you on the mat?</h2>
+          <p style={Z.profileSub}>You can change any of this later. Your belt is set by you — promotions are your coach's call.</p>
+
+          <div style={Z.pfField}>
+            <div style={Z.pfLabel}>Name</div>
+            <input value={profileName} onChange={(e)=>setProfileName(e.target.value)} placeholder="Your name or nickname" style={Z.pfInput} maxLength={24}/>
+          </div>
+
+          <div style={Z.pfField}>
+            <div style={Z.pfLabel}>Belt</div>
+            <div style={Z.beltRow}>
+              {BELTS.map((b)=>(
+                <button key={b.key} className="stp" onClick={()=>{setBelt(b.key);if(b.key==="white"&&stripes>4)setStripes(4);}}
+                  style={{...Z.beltChip,background:b.color,color:b.text,outline:belt===b.key?`3px solid ${warrior.accent}`:"none",outlineOffset:2}}>
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={Z.pfField}>
+            <div style={Z.pfLabel}>Stripes</div>
+            <div style={Z.stripeRow2}>
+              {[0,1,2,3,4].map((n)=>(
+                <button key={n} className="stp" onClick={()=>setStripes(n)}
+                  style={{...Z.stripeChip,...(stripes===n?{background:warrior.accent,borderColor:warrior.accent,color:"#14181F"}:{})}}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Live belt preview */}
+          <div style={Z.beltPreview}>
+            <div style={{...Z.beltBar,background:beltOf(belt).color}}>
+              <div style={Z.beltBlackBar}>
+                {[0,1,2,3].map((i)=>(<div key={i} style={{...Z.beltStripe,opacity:i<stripes?1:0.15}}/>))}
+              </div>
+            </div>
+            <div style={Z.beltPreviewLabel}>{beltOf(belt).name} Belt{stripes>0?` · ${stripes} stripe${stripes>1?"s":""}`:""}</div>
+          </div>
+
+          <button className="act" style={{...Z.primaryBtn,background:warrior.accent,marginTop:"auto"}} onClick={goHome}>Enter the app</button>
+        </div>
+      )}
+
+      {screen==="profile"&&warrior&&(
+        <div style={Z.profileWrap}>
+          <button style={Z.backBtn} onClick={goMore}>← Back</button>
+          <h2 style={Z.profileTitle}>Your Profile</h2>
+
+          {/* Warrior + belt summary */}
+          <div style={Z.profileSummary}>
+            <div style={{width:64,height:64,flexShrink:0}}><WarriorArt warriorKey={warriorKey} tier={tierIndex} size={64}/></div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{...Z.profileSumName,color:warrior.accent}}>{profileName||"Unnamed Fighter"}</div>
+              <div style={Z.profileSumSub}>{warrior.name} · {warrior.titles[tierIndex]}</div>
+            </div>
+          </div>
+
+          <div style={Z.beltPreview}>
+            <div style={{...Z.beltBar,background:beltOf(belt).color}}>
+              <div style={Z.beltBlackBar}>
+                {[0,1,2,3].map((i)=>(<div key={i} style={{...Z.beltStripe,opacity:i<stripes?1:0.15}}/>))}
+              </div>
+            </div>
+            <div style={Z.beltPreviewLabel}>{beltOf(belt).name} Belt{stripes>0?` · ${stripes} stripe${stripes>1?"s":""}`:""}</div>
+          </div>
+
+          <div style={Z.pfField}>
+            <div style={Z.pfLabel}>Name</div>
+            <input value={profileName} onChange={(e)=>setProfileName(e.target.value)} placeholder="Your name or nickname" style={Z.pfInput} maxLength={24}/>
+          </div>
+          <div style={Z.pfField}>
+            <div style={Z.pfLabel}>Belt</div>
+            <div style={Z.beltRow}>
+              {BELTS.map((b)=>(
+                <button key={b.key} className="stp" onClick={()=>setBelt(b.key)}
+                  style={{...Z.beltChip,background:b.color,color:b.text,outline:belt===b.key?`3px solid ${warrior.accent}`:"none",outlineOffset:2}}>
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={Z.pfField}>
+            <div style={Z.pfLabel}>Stripes</div>
+            <div style={Z.stripeRow2}>
+              {[0,1,2,3,4].map((n)=>(
+                <button key={n} className="stp" onClick={()=>setStripes(n)}
+                  style={{...Z.stripeChip,...(stripes===n?{background:warrior.accent,borderColor:warrior.accent,color:"#14181F"}:{})}}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1515,6 +1636,11 @@ export default function App(){
         <div style={Z.moreWrap}>
           <h2 style={Z.moreTitle}>More</h2>
           <div style={Z.moreList}>
+            <button className="act" style={Z.moreItem} onClick={goProfile}>
+              <span style={{...Z.moreItemIcon,color:beltOf(belt).color==="#E8E8E8"?"#B7BFC9":beltOf(belt).color}}>🥋</span>
+              <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>{profileName||"Your Profile"}</div><div style={Z.moreItemSub}>{beltOf(belt).name} belt{stripes>0?` · ${stripes} stripe${stripes>1?"s":""}`:""}</div></div>
+              <span style={Z.moreChevron}>›</span>
+            </button>
             <button className="act" style={Z.moreItem} onClick={goBoard}>
               <span style={{...Z.moreItemIcon,color:"#5AB48C"}}>🏆</span>
               <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Leaderboard</div><div style={Z.moreItemSub}>See where you rank at your gym</div></div>
@@ -1874,6 +2000,25 @@ const Z={
   tagBarTrack:{flex:1,height:10,background:"rgba(255,255,255,0.08)",borderRadius:5,overflow:"hidden"},
   tagBarFill:{height:"100%",borderRadius:5},
   tagBarCount:{fontFamily:"'Bebas Neue', sans-serif",fontSize:16,color:"#EDEFF2",width:22,textAlign:"right",flexShrink:0},
+  profileWrap:{height:"100%",display:"flex",flexDirection:"column",padding:"40px 24px 28px",overflowY:"auto"},
+  profileKicker:{fontSize:12.5,color:"#C9A15A",fontWeight:600,marginBottom:6},
+  profileTitle:{fontFamily:"'Bebas Neue', sans-serif",fontSize:30,margin:"0 0 6px",letterSpacing:0.5},
+  profileSub:{fontSize:13,lineHeight:1.5,color:"#8B95A3",marginBottom:20},
+  pfField:{marginBottom:18},
+  pfLabel:{fontSize:12,fontWeight:600,color:"#8B95A3",marginBottom:8},
+  pfInput:{width:"100%",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,color:"#EDEFF2",fontSize:15,fontFamily:"'Inter',sans-serif",padding:"12px 14px",outline:"none",boxSizing:"border-box"},
+  beltRow:{display:"flex",gap:6,flexWrap:"wrap"},
+  beltChip:{flex:"1 0 auto",padding:"9px 10px",borderRadius:10,fontSize:12,fontWeight:700,border:"none",minWidth:52},
+  stripeRow2:{display:"flex",gap:8},
+  stripeChip:{flex:1,padding:"11px 0",borderRadius:10,fontSize:15,fontWeight:700,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
+  beltPreview:{margin:"6px 0 20px",textAlign:"center"},
+  beltBar:{height:34,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:20,position:"relative",boxShadow:"inset 0 0 0 1px rgba(0,0,0,0.2)"},
+  beltBlackBar:{width:64,height:"100%",background:"#111",borderRadius:2,display:"flex",alignItems:"center",justifyContent:"center",gap:4},
+  beltStripe:{width:6,height:"70%",background:"#fff",borderRadius:1},
+  beltPreviewLabel:{fontSize:12.5,color:"#B7BFC9",marginTop:8,fontWeight:600},
+  profileSummary:{display:"flex",alignItems:"center",gap:14,background:"#1D232D",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"12px 14px",marginBottom:14},
+  profileSumName:{fontSize:16,fontWeight:700},
+  profileSumSub:{fontSize:12,color:"#8B95A3",marginTop:2},
   schedAddBox:{background:"#181D26",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 14px 16px"},
   schedAddLabel:{fontSize:13,fontWeight:700,color:"#EDEFF2",marginBottom:10},
   schedDayPicker:{display:"flex",gap:5,marginBottom:12,flexWrap:"wrap"},
