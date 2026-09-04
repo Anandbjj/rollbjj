@@ -1303,6 +1303,7 @@ export default function App(){
         button{font-family:'Inter',sans-serif;cursor:pointer;border:none}
         .act:active{transform:scale(.97)}.stp:active{transform:scale(.9)}
         .navbtn{cursor:pointer;transition:opacity 0.15s}.navbtn:active{opacity:0.6}
+        input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
       `}</style>
       <div style={Z.phone}><div style={Z.notch}/><div style={Z.screen}>
 
@@ -2008,12 +2009,20 @@ export default function App(){
                   <div key={k} style={Z.bdRow}>
                     <span style={Z.bdLabel}>{label}</span>
                     <div style={Z.bdStepper}>
-                      <button className="stp" style={Z.bdBtn} onClick={()=>setBd(k,bd[k]-15)}>−</button>
-                      <span style={Z.bdVal}>{bd[k]}m</span>
-                      <button className="stp" style={Z.bdBtn} onClick={()=>setBd(k,bd[k]+15)}>+</button>
+                      <button className="stp" style={Z.bdBtn} onClick={()=>setBd(k,bd[k]-5)}>−</button>
+                      <input
+                        type="number"
+                        value={bd[k]}
+                        onChange={(e)=>setBd(k, e.target.value===""?0:parseInt(e.target.value,10)||0)}
+                        style={Z.bdInput}
+                        inputMode="numeric"
+                      />
+                      <span style={Z.bdUnit}>m</span>
+                      <button className="stp" style={Z.bdBtn} onClick={()=>setBd(k,bd[k]+5)}>+</button>
                     </div>
                   </div>
                 ))}
+                <div style={Z.bdHint}>Tap a number to type it exactly.</div>
               </div>
             )}
 
@@ -2155,7 +2164,9 @@ const Z={
   bdLabel:{fontSize:13,color:"#D5DAE1",fontWeight:600},
   bdStepper:{display:"flex",alignItems:"center",gap:8},
   bdBtn:{width:26,height:26,borderRadius:7,background:"#242A34",border:"1px solid rgba(255,255,255,0.12)",color:"#EDEFF2",fontSize:15,lineHeight:1},
-  bdVal:{fontSize:13,color:"#EDEFF2",fontWeight:700,minWidth:42,textAlign:"center"},
+  bdInput:{width:38,background:"#242A34",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,color:"#EDEFF2",fontSize:13,fontWeight:700,textAlign:"center",padding:"4px 2px",outline:"none",MozAppearance:"textfield"},
+  bdUnit:{fontSize:12,color:"#8B95A3",marginLeft:-4},
+  bdHint:{fontSize:10.5,color:"#5D6673",marginTop:4,fontStyle:"italic"},
   matTotalRow:{fontFamily:"'Bebas Neue', sans-serif",fontSize:26,color:"#EDEFF2",marginBottom:12},
   matTotalSub:{fontFamily:"'Inter',sans-serif",fontSize:12,color:"#8B95A3",fontWeight:600,marginLeft:6},
   matNote:{fontSize:11,color:"#5D6673",marginTop:8,fontStyle:"italic"},
