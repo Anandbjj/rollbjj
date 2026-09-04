@@ -843,7 +843,7 @@ export default function App(){
   const points=warriorProgress[warriorKey]??0; // derived: active warrior's own progress
   const [streak,setStreak]=useState(saved?.streak ?? 0);
   const [revealed,setRevealed]=useState(false);
-  const [oppKey,setOppKey]=useState(null);
+  const [oppKey,setOppKey]=useState(saved?.warriorKey ? Object.keys(WARRIORS).find((k)=>k!==saved.warriorKey) : null);
   const [oppTier,setOppTier]=useState(1);
   const [duelPhase,setDuelPhase]=useState("idle"); // idle | attack | defend | resolve | result
   const [duelResult,setDuelResult]=useState(null);
@@ -915,6 +915,14 @@ export default function App(){
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[warriorProgress,sessions,warriorKey,newlyUnlocked]);
+
+  // Safety: make sure there's always a valid duel opponent once you have a warrior.
+  // (Returning players load straight to home and skip the quiz that used to set this.)
+  useEffect(()=>{
+    if(warriorKey && (!oppKey || oppKey===warriorKey)){
+      setOppKey(Object.keys(WARRIORS).find((k)=>k!==warriorKey));
+    }
+  },[warriorKey,oppKey]);
 
   // Keep "now" fresh so the schedule status (upcoming/ongoing/done) updates on its own.
   useEffect(()=>{
