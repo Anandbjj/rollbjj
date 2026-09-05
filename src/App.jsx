@@ -64,6 +64,9 @@ const ART = {
   ],
   roman: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/Normal_ROMAN.png";return [u,u,u,u];})(),
   khan: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/normal_stand_Khan.png";return [u,u,u,u];})(),
+  aztec: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788651977/aztec_idle-removebg-preview.png";return [u,u,u,u];})(),
+  cleopatra: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788651976/cleopatra_idle-removebg-preview.png";return [u,u,u,u];})(),
+  napoleon: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788649754/standard_napoleon-removebg-preview.png";return [u,u,u,u];})(),
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -87,6 +90,9 @@ const BACKGROUNDS = {
   spartan: "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233316/IMG_4776_1.jpg",
   roman:   "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/roman_background.jpg",
   khan:    "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/khan_background.jpg",
+  aztec:     "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788651978/aztec_turf.jpg",
+  cleopatra: "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788651977/cleopatra_turf.jpg",
+  napoleon:  "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788652115/napoleon_turf.jpg",
 };
 // Fallback gradient per line (used when a background is null)
 const BG_GRADIENT = {
@@ -97,6 +103,9 @@ const BG_GRADIENT = {
   spartan: "linear-gradient(180deg, #4a3628 0%, #6b4a2e 55%, #3a2818 100%)",
   roman:   "linear-gradient(180deg, #4a2828 0%, #6b3a30 55%, #3a1c1c 100%)",
   khan:    "linear-gradient(180deg, #4a3e1c 0%, #6b5a2e 55%, #3a2e12 100%)",
+  aztec:     "linear-gradient(180deg, #1c4a44 0%, #2e6b5a 55%, #123a30 100%)",
+  cleopatra: "linear-gradient(180deg, #4a3e1c 0%, #2e5a6b 55%, #123a3a 100%)",
+  napoleon:  "linear-gradient(180deg, #2a3050 0%, #45506e 55%, #1c2438 100%)",
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -168,6 +177,9 @@ const VICTORY_ART = {
   ],
   roman: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495913/Victory_pose_roman.png";return [u,u,u,u];})(),
   khan: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/Victory_pose_khan.png";return [u,u,u,u];})(),
+  aztec: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788651976/aztec_victory-removebg-preview.png";return [u,u,u,u];})(),
+  cleopatra: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788651975/cleopatra_victory-removebg-preview.png";return [u,u,u,u];})(),
+  napoleon: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788649754/victory_napoleon-removebg-preview.png";return [u,u,u,u];})(),
 };
 
 const DEFEAT_ART = {
@@ -203,6 +215,9 @@ const DEFEAT_ART = {
   ],
   roman: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/defeat_pose_roman.png";return [u,u,u,u];})(),
   khan: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/defeat_pose_khan.png";return [u,u,u,u];})(),
+  aztec: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788651976/aztec_defeatr-removebg-preview.png";return [u,u,u,u];})(),
+  cleopatra: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788651975/defeat-removebg-preview.png";return [u,u,u,u];})(),
+  napoleon: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788649754/defeat_napoleon-removebg-preview.png";return [u,u,u,u];})(),
 };
 
 
@@ -243,7 +258,7 @@ function optimize(url) {
 // 1 = no change. Tune these by eye until all warriors look roughly the same on-screen size.
 const ART_SCALE = {
   mongol: 1, knight: 1, viking: 1, samurai: 1, spartan: 1,
-  roman: 1.35, khan: 1.35, // premium warriors render bigger
+  roman: 1.35, khan: 1.35, aztec: 1.35, cleopatra: 1.35, napoleon: 1.35, // premium warriors render bigger
 };
 
 function WarriorArt({ warriorKey, tier, flip, scale = 1, size = 150 }) {
@@ -727,6 +742,9 @@ const WARRIORS={
   spartan:{key:"spartan",name:"Spartan",archetype:"The Anchor",tagline:"Control the hips, control the round",accent:"#B8862E",pal:SPARTAN_PAL,titles:["Agoge Recruit","Hoplite","Phalanx Captain","Spartan Elite"],desc:"Once on top, you're not in a hurry to leave.",winLine:(o)=>`You take ${o} down and ride full control.`,loseLine:(o)=>`${o} sweeps you before the takedown lands.`},
   roman:{key:"roman",name:"Roman Legatus",archetype:"The Legion",tagline:"Discipline is a weapon",accent:"#B0302E",pal:SPARTAN_PAL,premium:true,price:"$2.99",titles:["Legatus","Legatus","Legatus","Legatus"],desc:"Relentless, disciplined pressure — you advance in formation and never break.",winLine:(o)=>`You advance in perfect formation and overwhelm ${o}.`,loseLine:(o)=>`${o} finds the gap in your line.`},
   khan:{key:"khan",name:"The Great Khan",archetype:"The Conqueror",tagline:"All under heaven",accent:"#D9A93E",pal:MONGOL_PAL,premium:true,price:"$2.99",titles:["Great Khan","Great Khan","Great Khan","Great Khan"],desc:"An emperor's game — overwhelming, inevitable, and impossible to escape.",winLine:(o)=>`You conquer ${o} without mercy.`,loseLine:(o)=>`${o} weathers your storm and turns it back.`},
+  aztec:{key:"aztec",name:"Aztec Eagle Warrior",archetype:"The Sun's Talon",tagline:"Strike like a diving eagle",accent:"#2EA89A",pal:MONGOL_PAL,premium:true,price:"$2.99",titles:["Eagle Warrior","Eagle Warrior","Eagle Warrior","Eagle Warrior"],desc:"Explosive, ferocious aggression — you dive in fast and finish before they react.",winLine:(o)=>`You strike like a diving eagle and tear through ${o}.`,loseLine:(o)=>`${o} grounds your wings before you can strike.`},
+  cleopatra:{key:"cleopatra",name:"Cleopatra",archetype:"The Pharaoh Queen",tagline:"Dictate every moment",accent:"#D9B84E",pal:SPARTAN_PAL,premium:true,price:"$2.99",titles:["Pharaoh Queen","Pharaoh Queen","Pharaoh Queen","Pharaoh Queen"],desc:"Cunning control — you dictate the pace and lure them into every mistake.",winLine:(o)=>`You outmaneuver ${o} with regal precision.`,loseLine:(o)=>`${o} refuses to dance to your rhythm.`},
+  napoleon:{key:"napoleon",name:"Napoleon",archetype:"The Emperor",tagline:"Every move calculated",accent:"#3A5AA8",pal:KNIGHT_PAL,premium:true,price:"$2.99",titles:["Emperor","Emperor","Emperor","Emperor"],desc:"A brilliant tactician — calculated, decisive strikes at the perfect moment.",winLine:(o)=>`You outthink ${o} and strike at the decisive moment.`,loseLine:(o)=>`${o} breaks your lines before the plan comes together.`},
 };
 
 const ARCH_MAP={GW:"mongol",PP:"knight",SC:"viking",SH:"samurai",AN:"spartan"};
@@ -778,6 +796,9 @@ const WARRIOR_BALANCE = {
   // Premium warriors — DISTINCT playstyles, balanced to be fair (net power ≈ same as base line). Not stronger, just different to play.
   roman:   { attackZoneMod:+2, defendZoneMod:+2, dmgMod:0,  dmgPctBonus:0,    speedMod:0.5,  critMult:1.5 }, // disciplined: forgiving timing both ways, but faster bar & smaller crits — steady, no big swings
   khan:    { attackZoneMod:-2, defendZoneMod:-2, dmgMod:0,  dmgPctBonus:0.15, speedMod:0,    critMult:2.4 }, // conqueror: tight windows & risky, but massive crits and bonus damage — high skill, high reward
+  aztec:   { attackZoneMod:-1, defendZoneMod:-2, dmgMod:0,  dmgPctBonus:0.2,  speedMod:0.6,  critMult:2.0 }, // eagle: fast & aggressive, punishing to time, but big damage — glass-cannon striker
+  cleopatra:{ attackZoneMod:+2,defendZoneMod:+3, dmgMod:0,  dmgPctBonus:0,    speedMod:-0.2, critMult:1.5 }, // queen: slow, controlling, very forgiving defense — outlast and control, low burst
+  napoleon:{ attackZoneMod:+1, defendZoneMod:+1, dmgMod:2,  dmgPctBonus:0,    speedMod:0,    critMult:2.0 }, // tactician: balanced and reliable, solid crits, no glaring weakness — the all-rounder
 };
 const QUESTIONS=[
   {q:"First minute. What's in your head?",options:[{t:"Get a grip.",a:"AN"},{t:"Where's the choke.",a:"SH"},{t:"Let's see what happens.",a:"SC"},{t:"Get on top.",a:"PP"},{t:"Comfortable down here.",a:"GW"}]},
