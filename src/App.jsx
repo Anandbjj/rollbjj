@@ -242,8 +242,8 @@ function optimize(url) {
 // (some generated images have the character smaller within the frame than others).
 // 1 = no change. Tune these by eye until all warriors look roughly the same on-screen size.
 const ART_SCALE = {
-  mongol: 1.18, knight: 1, viking: 1, samurai: 1, spartan: 1,
-  roman: 1, khan: 0.9, // khan art is wider (horse) → nudge down a touch
+  mongol: 1, knight: 1, viking: 1, samurai: 1, spartan: 1,
+  roman: 1.35, khan: 1.35, // premium warriors render bigger
 };
 
 function WarriorArt({ warriorKey, tier, flip, scale = 1, size = 150 }) {
