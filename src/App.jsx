@@ -726,16 +726,33 @@ const ARCH_MAP={GW:"mongol",PP:"knight",SC:"viking",SH:"samurai",AN:"spartan"};
 // randomly face a premium warrior. Premium warriors are player-only.
 const BASE_KEYS=["mongol","knight","viking","samurai","spartan"];
 
-// Unlock milestones for the base warriors you didn't get from the quiz.
-// Tuned so each is a real, earned goal — spread across lifetime points and
-// competition count (both reflect actual training). One unlocks at a time.
-const UNLOCK_REQUIREMENTS = {
-  mongol:  { type:"lifetime",    value:20,  label:"Earn 20 lifetime points" },
-  knight:  { type:"lifetime",    value:40,  label:"Earn 40 lifetime points" },
-  viking:  { type:"lifetime",    value:70,  label:"Earn 70 lifetime points" },
-  samurai: { type:"competition", value:3,   label:"Log 3 competitions" },
-  spartan: { type:"lifetime",    value:100, label:"Earn 100 lifetime points" },
-};
+// Unlock milestones are POSITION-based, not tied to specific warriors — so every player
+// has the same unlock journey no matter which warrior the quiz gave them. The warriors you
+// didn't start with unlock one at a time (in a fixed order) as you hit these milestones.
+// Mixing points and a competition requirement means everyone experiences both.
+const UNLOCK_MILESTONES = [
+  { type:"lifetime",    value:20,  label:"Earn 20 lifetime points" },
+  { type:"lifetime",    value:45,  label:"Earn 45 lifetime points" },
+  { type:"competition", value:2,   label:"Log 2 competitions" },
+  { type:"lifetime",    value:90,  label:"Earn 90 lifetime points" },
+];
+// Fixed display order for the base warriors (your quiz warrior is pulled out; the rest
+// fill the milestone slots above in this order).
+const BASE_ORDER = ["mongol","knight","viking","samurai","spartan"];
+
+// Given the player's starting (quiz) warrior, returns the ordered list of the OTHER
+// four base warriors, each paired with the milestone that unlocks it. This makes the
+// unlock path identical for everyone regardless of which warrior they started with.
+function unlockPlan(startKey){
+  const others = BASE_ORDER.filter((k)=>k!==startKey);
+  return others.map((key,i)=>({ key, req: UNLOCK_MILESTONES[i] }));
+}
+// The requirement label to show for a given warrior in the roster (or null if not applicable).
+function reqLabelFor(key, startKey){
+  const plan = unlockPlan(startKey);
+  const found = plan.find((p)=>p.key===key);
+  return found ? found.req.label : null;
+}
 
 // Lightweight duel balance per archetype — small, flavor-driven edges, not stat gaps big
 // enough to make any line unfair. Rank + timing still matter far more than this does.
@@ -925,22 +942,24 @@ export default function App(){
   useEffect(()=>{
     if(!warriorKey)return; // no unlocks until the quiz has given you a starting warrior
     if(newlyUnlocked)return; // don't stack unlock popups — wait until the current one is dismissed
+    const startKey=unlockedWarriors[0]; // the quiz warrior is always the first unlocked
+    if(!startKey)return;
     const lifetime=Object.values(warriorProgress).reduce((a,b)=>a+b,0);
     const compCount=sessions.filter((s)=>s.type==="competition").length;
-    // Unlock at most ONE warrior per pass, in a fixed order, so a big jump can't
-    // hand over a pile of warriors at once — they're earned one at a time.
-    const order=["mongol","knight","viking","samurai","spartan"];
-    for(const key of order){
+    const plan=unlockPlan(startKey);
+    // Unlock at most ONE per pass, in order, so a big jump can't hand over a pile at once.
+    for(const {key,req} of plan){
       if(unlockedWarriors.includes(key))continue;
-      const req=UNLOCK_REQUIREMENTS[key];
       let met=false;
       if(req.type==="lifetime")met=lifetime>=req.value;
       else if(req.type==="competition")met=compCount>=req.value;
       if(met){
         setUnlockedWarriors((u)=>[...u,key]);
         setNewlyUnlocked(key);
-        break; // only one per pass
+        break;
       }
+      // Stop at the first still-locked warrior: they unlock strictly in order.
+      break;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[warriorProgress,sessions,warriorKey,newlyUnlocked]);
@@ -1229,7 +1248,7 @@ export default function App(){
         setLockedZone(null);setMarkerPos(0);
         setDuelPhase("defend");
         startMarker(markerSpeed(oppKey));
-      },1100);
+      },750);
     } else if(duelPhase==="defend"){
       stopMarker();
       const res=judge(myTier,"defend",warriorKey);
@@ -1255,7 +1274,7 @@ export default function App(){
         setLockedZone(null);setMarkerPos(0);
         setDuelPhase("attack");
         startMarker(markerSpeed(warriorKey));
-      },1100);
+      },750);
     }
   }
 
@@ -1917,7 +1936,7 @@ export default function App(){
                     ):isPremium?(
                       <div style={Z.rosterMeta}>{w.tagline}</div>
                     ):(
-                      <div style={Z.rosterLocked}>🔒 {UNLOCK_REQUIREMENTS[w.key]?.label||"Locked"}</div>
+                      <div style={Z.rosterLocked}>🔒 {reqLabelFor(w.key, unlockedWarriors[0])||"Locked"}</div>
                     )}
                   </div>
                   {isPremium&&!owned&&(
