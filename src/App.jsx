@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+Aimport { useState, useRef, useEffect } from "react";
 
 // ═══════════════════════════════════════════════════════════
 //  LOCAL SAVING
@@ -1010,8 +1010,8 @@ export default function App(){
     const w=WARRIORS[key];
     if(!window.confirm(`Unlock ${w.name} for ${w.price}?\n\n(Payments aren't live yet — this unlocks it for free so you can try it. Real checkout comes later.)`))return;
     setOwnedPremium((p)=>[...p,key]);
-    // Premium warriors arrive fully maxed.
-    setWarriorProgress((prog)=>({...prog,[key]:THRESHOLDS[THRESHOLDS.length-1]}));
+    // Premium warriors are maxed by their `premium` flag (tierIndex forces max tier) —
+    // we deliberately do NOT give them points, so they never affect unlock milestones or stats.
     setNewlyUnlocked(key);
   }
   function goRoster(){setScreen("roster");}
@@ -1509,7 +1509,7 @@ export default function App(){
           <div style={Z.homeHead}>
             <div style={{...Z.archTag,color:warrior.accent}}>{warrior.archetype}</div>
             <div className="act" style={{...Z.streakTag,cursor:"pointer"}} onClick={goBoard}>🔥 {streak} wk streak</div>
-            <div style={Z.ptsTag}>{points} pts</div>
+            <div style={Z.ptsTag}>{warrior.premium?"⭐ MAX":`${points} pts`}</div>
           </div>
           {(()=>{
             const {today,todayState,next}=scheduleStatus(schedule, now);
@@ -1536,8 +1536,14 @@ export default function App(){
           <h1 style={{...Z.tierName,color:warrior.accent}}>{warrior.titles[tierIndex]}</h1>
           <div style={Z.wLabel}>{warrior.name}</div>
           <div style={Z.xpSec}>
-            <div style={Z.xpRow}><span style={Z.xpL}>{nextThreshold?`Next: ${warrior.titles[tierIndex+1]}`:"Max rank"}</span><span style={Z.xpL}>{points}{nextThreshold?` / ${nextThreshold}`:""}</span></div>
-            <div style={Z.xpTrack}><div style={{...Z.xpFill,width:`${progressPct}%`,background:warrior.accent}}/></div>
+            {warrior.premium ? (
+              <div style={{...Z.xpRow,justifyContent:"center"}}><span style={{...Z.xpL,color:warrior.accent,fontWeight:700}}>⭐ Premium warrior · fully maxed</span></div>
+            ) : (
+              <>
+                <div style={Z.xpRow}><span style={Z.xpL}>{nextThreshold?`Next: ${warrior.titles[tierIndex+1]}`:"Max rank"}</span><span style={Z.xpL}>{points}{nextThreshold?` / ${nextThreshold}`:""}</span></div>
+                <div style={Z.xpTrack}><div style={{...Z.xpFill,width:`${progressPct}%`,background:warrior.accent}}/></div>
+              </>
+            )}
           </div>
           <div style={Z.homeFoot}>
             <button className="act" style={{...Z.primaryBtn,background:warrior.accent}} onClick={logClass}>Log a class · +1</button>
