@@ -238,6 +238,14 @@ function optimize(url) {
 }
 
 // Unified warrior renderer: uses image if present & loads, else pixel sprite
+// Per-warrior render scale to compensate for inconsistent framing in the source art
+// (some generated images have the character smaller within the frame than others).
+// 1 = no change. Tune these by eye until all warriors look roughly the same on-screen size.
+const ART_SCALE = {
+  mongol: 1.18, knight: 1, viking: 1, samurai: 1, spartan: 1,
+  roman: 1, khan: 0.9, // khan art is wider (horse) → nudge down a touch
+};
+
 function WarriorArt({ warriorKey, tier, flip, scale = 1, size = 150 }) {
   // Tier-4 special art overrides the normal tier-4 image when provided
   let url = ART[warriorKey] && ART[warriorKey][tier];
@@ -246,7 +254,7 @@ function WarriorArt({ warriorKey, tier, flip, scale = 1, size = 150 }) {
   const [failed, setFailed] = useState(false);
 
   if (url && !failed) {
-    const dim = size * scale;
+    const dim = size * scale * (ART_SCALE[warriorKey] || 1);
     return (
       <img src={optimize(url)} alt={w.titles[tier]}
         referrerPolicy="no-referrer"
@@ -944,7 +952,9 @@ export default function App(){
     if(newlyUnlocked)return; // don't stack unlock popups — wait until the current one is dismissed
     const startKey=unlockedWarriors[0]; // the quiz warrior is always the first unlocked
     if(!startKey)return;
-    const lifetime=Object.values(warriorProgress).reduce((a,b)=>a+b,0);
+    // Lifetime points for unlocks counts ONLY real training on base warriors —
+    // premium warriors are bought & maxed, so their points must NOT count toward unlocks.
+    const lifetime=BASE_ORDER.reduce((sum,k)=>sum+(warriorProgress[k]||0),0);
     const compCount=sessions.filter((s)=>s.type==="competition").length;
     const plan=unlockPlan(startKey);
     // Unlock at most ONE per pass, in order, so a big jump can't hand over a pile at once.
@@ -1742,7 +1752,7 @@ export default function App(){
         sessions.forEach((s)=>(s.tags||[]).forEach((t)=>{tagCounts[t]=(tagCounts[t]||0)+1;}));
         const topTags=Object.entries(tagCounts).sort((a,b)=>b[1]-a[1]).slice(0,5);
         const maxTag=topTags.length?topTags[0][1]:1;
-        const lifetime=Object.values(warriorProgress).reduce((a,b)=>a+b,0);
+        const lifetime=BASE_ORDER.reduce((sum,k)=>sum+(warriorProgress[k]||0),0);
         const totalDuels=record.w+record.l;
         const winPct=totalDuels?Math.round((record.w/totalDuels)*100):0;
         // All-time BJJ time breakdown (from class breakdowns)
@@ -2055,7 +2065,7 @@ export default function App(){
         const editing = sessions.find((s)=>s.id===detailPrompt);
         const isClass = editing?.type==="class";
         const bd = draftBreakdown;
-        const setBd = (k,v)=>setDraftBreakdown((b)=>({...b,[k]:Math.max(0,v)}));
+        const setBd = (k,v)=>setDraftBreakdown((b)=>({...b,[k]:Math.max(0,Math.min(100,v))}));
         const totalMin = bd.warmup+bd.drilling+bd.rolling;
         return (
         <div style={Z.detailOverlay}>
