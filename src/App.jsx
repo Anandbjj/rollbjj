@@ -2086,13 +2086,15 @@ export default function App(){
                         onChange={(e)=>setBd(k, e.target.value===""?0:parseInt(e.target.value,10)||0)}
                         style={Z.bdInput}
                         inputMode="numeric"
+                        min={0}
+                        max={100}
                       />
                       <span style={Z.bdUnit}>m</span>
                       <button className="stp" style={Z.bdBtn} onClick={()=>setBd(k,bd[k]+5)}>+</button>
                     </div>
                   </div>
                 ))}
-                <div style={Z.bdHint}>Tap a number to type it exactly.</div>
+                <div style={Z.bdHint}>Tap a number to type it exactly · 100 min max per segment.</div>
               </div>
             )}
 
