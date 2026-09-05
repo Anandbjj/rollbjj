@@ -62,6 +62,8 @@ const ART = {
     "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788285432/lvl_3_spartan-removebg-preview.png",
     "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788285433/lvl_4_spartan-removebg-preview.png",
   ],
+  roman: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/Normal_ROMAN.png";return [u,u,u,u];})(),
+  khan: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/normal_stand_Khan.png";return [u,u,u,u];})(),
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -83,6 +85,8 @@ const BACKGROUNDS = {
   viking:  "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233316/IMG_4777.jpg",
   samurai: "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233315/IMG_4775.jpg",
   spartan: "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233316/IMG_4776_1.jpg",
+  roman:   "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/roman_background.jpg",
+  khan:    "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/khan_background.jpg",
 };
 // Fallback gradient per line (used when a background is null)
 const BG_GRADIENT = {
@@ -91,6 +95,8 @@ const BG_GRADIENT = {
   viking:  "linear-gradient(180deg, #2a3846 0%, #3c5060 55%, #24333e 100%)",
   samurai: "linear-gradient(180deg, #2a2230 0%, #3c3040 55%, #241c28 100%)",
   spartan: "linear-gradient(180deg, #4a3628 0%, #6b4a2e 55%, #3a2818 100%)",
+  roman:   "linear-gradient(180deg, #4a2828 0%, #6b3a30 55%, #3a1c1c 100%)",
+  khan:    "linear-gradient(180deg, #4a3e1c 0%, #6b5a2e 55%, #3a2e12 100%)",
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -160,6 +166,8 @@ const VICTORY_ART = {
     "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788293257/victory_tier_3_spartan-removebg-preview.png",
     "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788293257/victory_tier_4_spartan-removebg-preview.png",
   ],
+  roman: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495913/Victory_pose_roman.png";return [u,u,u,u];})(),
+  khan: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/Victory_pose_khan.png";return [u,u,u,u];})(),
 };
 
 const DEFEAT_ART = {
@@ -193,6 +201,8 @@ const DEFEAT_ART = {
     "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788293257/defeat_tier_3_spartan__2_-removebg-preview.png",
     "https://res.cloudinary.com/qt4ptjgy/image/upload/v1788293257/defeat_tier_4_spartan-removebg-preview.png",
   ],
+  roman: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/defeat_pose_roman.png";return [u,u,u,u];})(),
+  khan: (()=>{const u="https://res.cloudinary.com/qt4ptjgy/image/upload/v1788495912/defeat_pose_khan.png";return [u,u,u,u];})(),
 };
 
 
@@ -707,9 +717,14 @@ const WARRIORS={
   viking:{key:"viking",name:"Viking Berserker",archetype:"Scrambler",tagline:"Never where you left them",accent:"#4A8FB0",pal:VIKING_PAL,titles:["Raider","Shield-Bearer","Berserker","Jarl's Chosen"],desc:"You chain transitions before anyone can settle.",winLine:(o)=>`You scramble through chaos and take ${o}'s back.`,loseLine:(o)=>`${o} catches you mid-scramble.`},
   samurai:{key:"samurai",name:"Samurai",archetype:"Submission Hunter",tagline:"Always three moves ahead",accent:"#B33A3A",pal:SAMURAI_PAL,titles:["Ashigaru","Ronin","Samurai","Daimyo's Blade"],desc:"The tap is the whole point. You hunt from everywhere.",winLine:(o)=>`You finish clean before ${o} sees it.`,loseLine:(o)=>`You overcommit and ${o} reverses you.`},
   spartan:{key:"spartan",name:"Spartan",archetype:"The Anchor",tagline:"Control the hips, control the round",accent:"#B8862E",pal:SPARTAN_PAL,titles:["Agoge Recruit","Hoplite","Phalanx Captain","Spartan Elite"],desc:"Once on top, you're not in a hurry to leave.",winLine:(o)=>`You take ${o} down and ride full control.`,loseLine:(o)=>`${o} sweeps you before the takedown lands.`},
+  roman:{key:"roman",name:"Roman Legatus",archetype:"The Legion",tagline:"Discipline is a weapon",accent:"#B0302E",pal:SPARTAN_PAL,premium:true,price:"$2.99",titles:["Legatus","Legatus","Legatus","Legatus"],desc:"Relentless, disciplined pressure — you advance in formation and never break.",winLine:(o)=>`You advance in perfect formation and overwhelm ${o}.`,loseLine:(o)=>`${o} finds the gap in your line.`},
+  khan:{key:"khan",name:"The Great Khan",archetype:"The Conqueror",tagline:"All under heaven",accent:"#D9A93E",pal:MONGOL_PAL,premium:true,price:"$2.99",titles:["Great Khan","Great Khan","Great Khan","Great Khan"],desc:"An emperor's game — overwhelming, inevitable, and impossible to escape.",winLine:(o)=>`You conquer ${o} without mercy.`,loseLine:(o)=>`${o} weathers your storm and turns it back.`},
 };
 
 const ARCH_MAP={GW:"mongol",PP:"knight",SC:"viking",SH:"samurai",AN:"spartan"};
+// Base (non-premium) warrior keys — used for default duel opponents so you never
+// randomly face a premium warrior. Premium warriors are player-only.
+const BASE_KEYS=["mongol","knight","viking","samurai","spartan"];
 
 // Unlock milestones for the base warriors you didn't get from the quiz.
 // Tuned so each is a real, earned goal — spread across lifetime points and
@@ -735,6 +750,9 @@ const WARRIOR_BALANCE = {
   viking:  { attackZoneMod:0,  defendZoneMod:0,  dmgMod:0,  dmgPctBonus:0.25, speedMod:0.4,  critMult:1.8 }, // fast and chaotic: harder to time, hits harder when it lands
   samurai: { attackZoneMod:-1, defendZoneMod:-1, dmgMod:0,  dmgPctBonus:0,    speedMod:0,    critMult:2.2 }, // precise finisher: tight windows, huge payoff on a crit
   spartan: { attackZoneMod:0,  defendZoneMod:+2, dmgMod:3,  dmgPctBonus:0,    speedMod:0,    critMult:1.8 }, // anchor: hits a little harder, blocks a little easier
+  // Premium warriors — DISTINCT playstyles, balanced to be fair (net power ≈ same as base line). Not stronger, just different to play.
+  roman:   { attackZoneMod:+2, defendZoneMod:+2, dmgMod:0,  dmgPctBonus:0,    speedMod:0.5,  critMult:1.5 }, // disciplined: forgiving timing both ways, but faster bar & smaller crits — steady, no big swings
+  khan:    { attackZoneMod:-2, defendZoneMod:-2, dmgMod:0,  dmgPctBonus:0.15, speedMod:0,    critMult:2.4 }, // conqueror: tight windows & risky, but massive crits and bonus damage — high skill, high reward
 };
 const QUESTIONS=[
   {q:"First minute. What's in your head?",options:[{t:"Get a grip.",a:"AN"},{t:"Where's the choke.",a:"SH"},{t:"Let's see what happens.",a:"SC"},{t:"Get on top.",a:"PP"},{t:"Comfortable down here.",a:"GW"}]},
@@ -848,7 +866,7 @@ export default function App(){
   const points=warriorProgress[warriorKey]??0; // derived: active warrior's own progress
   const [streak,setStreak]=useState(saved?.streak ?? 0);
   const [revealed,setRevealed]=useState(false);
-  const [oppKey,setOppKey]=useState(saved?.warriorKey ? Object.keys(WARRIORS).find((k)=>k!==saved.warriorKey) : null);
+  const [oppKey,setOppKey]=useState(saved?.warriorKey ? BASE_KEYS.find((k)=>k!==saved.warriorKey)||"knight" : null);
   const [oppTier,setOppTier]=useState(1);
   const [duelPhase,setDuelPhase]=useState("idle"); // idle | attack | defend | resolve | result
   const [duelResult,setDuelResult]=useState(null);
@@ -887,6 +905,7 @@ export default function App(){
   const [schedule,setSchedule]=useState(saved?.schedule ?? DEFAULT_SCHEDULE);
   // ─── Profile (name, belt, stripes) ───
   const [profileName,setProfileName]=useState(saved?.profileName ?? "");
+  const [ownedPremium,setOwnedPremium]=useState(saved?.ownedPremium ?? []); // keys of purchased premium warriors
   const [belt,setBelt]=useState(saved?.belt ?? "white");
   const [stripes,setStripes]=useState(saved?.stripes ?? 0);
   const [now,setNow]=useState(new Date());
@@ -896,7 +915,7 @@ export default function App(){
   const [addEnd,setAddEnd]=useState("22:00");
 
   const warrior=warriorKey?WARRIORS[warriorKey]:null;
-  const tierIndex=THRESHOLDS.filter((t)=>points>=t).length-1;
+  const tierIndex=(warrior&&warrior.premium)?THRESHOLDS.length-1:THRESHOLDS.filter((t)=>points>=t).length-1;
 
   function addPopup(text,color){const id=idRef.current++;setPopups((p)=>[...p,{id,text,color:color||(warrior?warrior.accent:"#C9A15A")}]);setTimeout(()=>setPopups((p)=>p.filter((pu)=>pu.id!==id)),1300);}
   function triggerAnim(type,d=600){setAnim(type);setTimeout(()=>setAnim(null),d);}
@@ -930,7 +949,7 @@ export default function App(){
   // (Returning players load straight to home and skip the quiz that used to set this.)
   useEffect(()=>{
     if(warriorKey && (!oppKey || oppKey===warriorKey)){
-      setOppKey(Object.keys(WARRIORS).find((k)=>k!==warriorKey));
+      setOppKey(BASE_KEYS.find((k)=>k!==warriorKey)||"knight");
     }
   },[warriorKey,oppKey]);
 
@@ -945,19 +964,31 @@ export default function App(){
     writeSave({
       warriorKey, warriorProgress, unlockedWarriors, streak,
       record, sessions, lastCompDateStr, schedule, lastClassLogStr,
-      profileName, belt, stripes,
+      profileName, belt, stripes, ownedPremium,
     });
-  },[warriorKey,warriorProgress,unlockedWarriors,streak,record,sessions,lastCompDateStr,schedule,lastClassLogStr,profileName,belt,stripes]);
+  },[warriorKey,warriorProgress,unlockedWarriors,streak,record,sessions,lastCompDateStr,schedule,lastClassLogStr,profileName,belt,stripes,ownedPremium]);
 
   function setActiveWarrior(key){
-    if(!unlockedWarriors.includes(key))return;
+    // A warrior is usable if it's unlocked (base) OR owned (premium).
+    const usable = unlockedWarriors.includes(key) || ownedPremium.includes(key);
+    if(!usable)return;
     setWarriorKey(key);
     setScreen("home");
+  }
+  function purchasePremium(key){
+    // Mock purchase — no real payment yet. Unlocks the premium warrior as "owned & maxed."
+    if(ownedPremium.includes(key))return;
+    const w=WARRIORS[key];
+    if(!window.confirm(`Unlock ${w.name} for ${w.price}?\n\n(Payments aren't live yet — this unlocks it for free so you can try it. Real checkout comes later.)`))return;
+    setOwnedPremium((p)=>[...p,key]);
+    // Premium warriors arrive fully maxed.
+    setWarriorProgress((prog)=>({...prog,[key]:THRESHOLDS[THRESHOLDS.length-1]}));
+    setNewlyUnlocked(key);
   }
   function goRoster(){setScreen("roster");}
 
   function startQuiz(){setQIndex(0);setTally({GW:0,PP:0,SC:0,SH:0,AN:0});setScreen("quiz");}
-  function answer(a){const next={...tally,[a]:tally[a]+1};if(qIndex+1<QUESTIONS.length){setTally(next);setQIndex(qIndex+1);}else{let best="GW",bs=-1;Object.keys(next).forEach((k)=>{if(next[k]>bs){bs=next[k];best=k;}});setTally(next);const wk=ARCH_MAP[best];setWarriorKey(wk);setUnlockedWarriors([wk]);setOppKey(Object.keys(WARRIORS).find((k)=>k!==wk));setScreen("reveal");setTimeout(()=>setRevealed(true),80);}}
+  function answer(a){const next={...tally,[a]:tally[a]+1};if(qIndex+1<QUESTIONS.length){setTally(next);setQIndex(qIndex+1);}else{let best="GW",bs=-1;Object.keys(next).forEach((k)=>{if(next[k]>bs){bs=next[k];best=k;}});setTally(next);const wk=ARCH_MAP[best];setWarriorKey(wk);setUnlockedWarriors([wk]);setOppKey(BASE_KEYS.find((k)=>k!==wk)||"knight");setScreen("reveal");setTimeout(()=>setRevealed(true),80);}}
   function goHome(){setScreen("home");}
   function goProfileSetup(){setScreen("profileSetup");}
   function goProfile(){setScreen("profile");}
@@ -972,6 +1003,7 @@ export default function App(){
     setWarriorKey(null);
     setWarriorProgress({mongol:0,knight:0,viking:0,samurai:0,spartan:0});
     setUnlockedWarriors([]);
+    setOwnedPremium([]);
     setNewlyUnlocked(null);
     setStreak(0);
     setRecord({w:0,l:0});
@@ -1524,8 +1556,8 @@ export default function App(){
           : { background: BG_GRADIENT[fieldLine] };
         const showField = duelPhase!=="idle";
         return (
-          <div style={Z.duelWrap}>
-            <button style={Z.backBtn} onClick={()=>{stopMarker();goHome();}}>← Back</button>
+          <div style={Z.duelWrap} onClick={active?onTap:undefined}>
+            <button style={Z.backBtn} onClick={(e)=>{e.stopPropagation();stopMarker();goHome();}}>← Back</button>
             <div style={Z.recRow}><span style={Z.recText}>{record.w}W — {record.l}L</span></div>
 
             {/* Best-of-N round score */}
@@ -1590,7 +1622,7 @@ export default function App(){
 
             {/* Pre-fight setup (idle only) */}
             {duelPhase==="idle"&&(<>
-              <div style={Z.oppTabs}>{Object.entries(WARRIORS).filter(([k])=>k!==warriorKey).map(([key,w])=>(<button key={key} className="stp" onClick={()=>{setOppKey(key);}} style={{...Z.tab,borderColor:oppKey===key?w.accent:"rgba(255,255,255,0.1)",color:oppKey===key?w.accent:"#5D6673"}}>{w.name.split(" ")[0]}</button>))}</div>
+              <div style={Z.oppTabs}>{Object.entries(WARRIORS).filter(([k])=>k!==warriorKey&&!WARRIORS[k].premium).map(([key,w])=>(<button key={key} className="stp" onClick={()=>{setOppKey(key);}} style={{...Z.tab,borderColor:oppKey===key?w.accent:"rgba(255,255,255,0.1)",color:oppKey===key?w.accent:"#5D6673"}}>{w.name.split(" ")[0]}</button>))}</div>
               <div style={Z.stepperRow}><span style={Z.stepText}>Opponent rank</span><button className="stp" style={Z.stepBtn} onClick={()=>setOppTier((t)=>Math.max(0,t-1))}>−</button><span style={Z.stepText}>{oppTier+1}</span><button className="stp" style={Z.stepBtn} onClick={()=>setOppTier((t)=>Math.min(3,t+1))}>+</button></div>
               <div style={Z.formatLabel}>Match length</div>
               <div style={Z.formatSeg}>
@@ -1607,7 +1639,7 @@ export default function App(){
             {(active||clashing)&&(
               <div style={{margin:"4px 0 10px"}}>
                 <div style={{...Z.duelLog,color:isAttack?warrior.accent:opp.accent}}>{duelLog}</div>
-                <div style={Z.timingTrack} onClick={active?onTap:undefined}>
+                <div style={Z.timingTrack}>
                   {/* good zone */}
                   <div style={{position:"absolute",top:0,bottom:0,left:`${50-good}%`,width:`${good*2}%`,background:"rgba(90,180,140,0.18)"}}/>
                   {/* perfect zone */}
@@ -1617,7 +1649,8 @@ export default function App(){
                   {/* marker */}
                   <div style={{position:"absolute",top:-3,bottom:-3,left:`${lockedZone?lockedZone.at:markerPos}%`,width:4,borderRadius:2,background:lockedZone?(lockedZone.result==="perfect"?"#E8C95E":lockedZone.result==="good"?"#5AB48C":"#B33A3A"):"#FFFFFF",transform:"translateX(-2px)",boxShadow:"0 0 8px rgba(255,255,255,0.6)"}}/>
                 </div>
-                <div style={Z.timingHint}>{active?"TAP to lock":(lockedZone?lockedZone.result.toUpperCase():"")}</div>
+                <div style={Z.timingHint}>{active?"TAP ANYWHERE to lock":(lockedZone?lockedZone.result.toUpperCase():"")}</div>
+                {active&&<div style={Z.tapAnywhereHint}>Tap anywhere on the screen</div>}
               </div>
             )}
 
@@ -1864,25 +1897,33 @@ export default function App(){
           <h2 style={Z.rosterTitle}>Your Roster</h2>
           <p style={Z.rosterSub}>Only your active warrior earns points when you log training. Switch anytime — everyone's progress is saved.</p>
           <div style={Z.rosterList}>
-            {Object.values(WARRIORS).map((w)=>{
-              const unlocked=unlockedWarriors.includes(w.key);
+            {Object.values(WARRIORS).sort((a,b)=>(a.premium?1:0)-(b.premium?1:0)).map((w)=>{
+              const isPremium=!!w.premium;
+              const owned=isPremium?ownedPremium.includes(w.key):unlockedWarriors.includes(w.key);
               const prog=warriorProgress[w.key]||0;
-              const tIdx=THRESHOLDS.filter((t)=>prog>=t).length-1;
+              const tIdx=isPremium?THRESHOLDS.length-1:THRESHOLDS.filter((t)=>prog>=t).length-1;
               const isActive=w.key===warriorKey;
               return (
-                <div key={w.key} style={{...Z.rosterCard,...(isActive?{border:`1px solid ${w.accent}`,background:`${w.accent}14`}:{})}}>
-                  <div style={{width:52,height:52,borderRadius:11,overflow:"hidden",flexShrink:0,filter:unlocked?"none":"grayscale(1) brightness(0.45)"}}>
-                    <WarriorArt warriorKey={w.key} tier={unlocked?tIdx:0} size={52}/>
+                <div key={w.key} style={{...Z.rosterCard,...(isActive?{border:`1px solid ${w.accent}`,background:`${w.accent}14`}:{}),...(isPremium&&!owned?{border:"1px solid rgba(217,169,62,0.35)"}:{})}}>
+                  <div style={{width:52,height:52,borderRadius:11,overflow:"hidden",flexShrink:0,filter:owned?"none":"grayscale(1) brightness(0.45)"}}>
+                    <WarriorArt warriorKey={w.key} tier={owned?tIdx:(isPremium?THRESHOLDS.length-1:0)} size={52}/>
                   </div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{...Z.rosterName,color:unlocked?w.accent:"#5D6673"}}>{w.name}</div>
-                    {unlocked?(
-                      <div style={Z.rosterMeta}>{w.titles[tIdx]} · {prog} pts</div>
+                    <div style={{...Z.rosterName,color:owned?w.accent:(isPremium?"#D9A93E":"#5D6673")}}>
+                      {w.name}{isPremium&&<span style={Z.premiumTag}>PREMIUM</span>}
+                    </div>
+                    {owned?(
+                      <div style={Z.rosterMeta}>{isPremium?"Maxed · unique playstyle":`${w.titles[tIdx]} · ${prog} pts`}</div>
+                    ):isPremium?(
+                      <div style={Z.rosterMeta}>{w.tagline}</div>
                     ):(
                       <div style={Z.rosterLocked}>🔒 {UNLOCK_REQUIREMENTS[w.key]?.label||"Locked"}</div>
                     )}
                   </div>
-                  {unlocked&&!isActive&&(
+                  {isPremium&&!owned&&(
+                    <button className="act" style={{...Z.rosterBuyBtn}} onClick={()=>purchasePremium(w.key)}>{w.price}</button>
+                  )}
+                  {owned&&!isActive&&(
                     <button className="act" style={{...Z.rosterSwitchBtn,borderColor:w.accent,color:w.accent}} onClick={()=>setActiveWarrior(w.key)}>Switch</button>
                   )}
                   {isActive&&<div style={{...Z.rosterActiveTag,color:w.accent}}>Active</div>}
@@ -2131,6 +2172,7 @@ const Z={
   duelLog:{fontSize:12.5,fontWeight:600,textAlign:"center",marginBottom:6,minHeight:16},
   timingTrack:{position:"relative",height:26,background:"#12161C",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,cursor:"pointer",overflow:"visible"},
   timingHint:{fontSize:10,color:"#8B95A3",textAlign:"center",marginTop:5,letterSpacing:1,fontWeight:600},
+  tapAnywhereHint:{fontSize:9.5,color:"#5D6673",textAlign:"center",marginTop:2},
   rankNote:{fontSize:10.5,lineHeight:1.5,color:"#5D6673",textAlign:"center",marginBottom:6},
   shopWrap:{height:"100%",display:"flex",flexDirection:"column",padding:"36px 22px 24px",overflowY:"auto"},
   shopTitle:{fontFamily:"'Bebas Neue', sans-serif",fontSize:30,margin:"8px 0 4px"},
@@ -2189,6 +2231,8 @@ const Z={
   rosterLocked:{fontSize:11,color:"#5D6673",marginTop:2},
   rosterSwitchBtn:{padding:"7px 13px",borderRadius:10,background:"transparent",border:"1px solid",fontSize:11.5,fontWeight:700,flexShrink:0},
   rosterActiveTag:{fontSize:11,fontWeight:700,flexShrink:0},
+  premiumTag:{fontSize:8.5,fontWeight:800,color:"#14181F",background:"#D9A93E",padding:"1px 6px",borderRadius:8,marginLeft:8,letterSpacing:0.5,verticalAlign:"middle"},
+  rosterBuyBtn:{padding:"8px 14px",borderRadius:10,background:"#D9A93E",border:"none",color:"#14181F",fontSize:12.5,fontWeight:800,flexShrink:0},
   schedLine:{fontSize:12.5,fontWeight:600,color:"#B7BFC9",background:"rgba(255,255,255,0.06)",borderRadius:10,padding:"8px 12px",textAlign:"center",marginBottom:10,cursor:"pointer"},
   schedPrompt:{width:"100%",padding:"12px 16px",color:"#14181F",border:"none",borderRadius:12,fontSize:14,fontWeight:700,marginBottom:10},
   schedWrap:{height:"100%",display:"flex",flexDirection:"column",padding:"36px 20px 20px",overflowY:"auto"},
