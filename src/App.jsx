@@ -1,4 +1,4 @@
-Aimport { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 
 // ═══════════════════════════════════════════════════════════
 //  LOCAL SAVING
@@ -1172,12 +1172,30 @@ export default function App(){
     if(matchFormat===1) return true;
     return roundWins.you===roundsToWin-1 && roundWins.opp===roundsToWin-1;
   }
+  // Each round escalates: round 2 harder than round 1, etc. (0 for round 1).
+  function roundEscalation(){ return Math.max(0, roundNum-1); }
+  // Gentle rubber-band: if YOU'RE ahead on rounds, it gets a touch harder for you;
+  // if you're behind, a touch easier. Tied = neutral. Keeps matches close without
+  // erasing skill. Positive = harder for you.
+  function momentum(){ return (roundWins.you - roundWins.opp); } // >0 you lead, <0 you trail
   function markerSpeed(forKey){
     const bal=WARRIOR_BALANCE[forKey]||{};
-    const roundBoost = isDecider() ? 1.3 : 0; // decider is faster
-    return 1.9 + oppTier*0.28 + (bal.speedMod||0) + roundBoost;
+    const roundBoost = isDecider() ? 1.3 : 0;      // decider is faster
+    const escalate = roundEscalation()*0.25;        // +0.25 speed per round elapsed
+    // Rubber-band only affects YOUR bar speed (when you're the attacker), gently.
+    const band = (forKey===warriorKey) ? momentum()*0.2 : 0; // leading = slightly faster/harder
+    return 1.9 + oppTier*0.28 + (bal.speedMod||0) + roundBoost + escalate + band;
   }
-  function roundZonePenalty(){ return isDecider() ? 3 : 0; }
+  function roundZonePenalty(){
+    // Zones get tighter as rounds progress, tighter still on the decider,
+    // and tighter when you're leading (rubber-band). Never below 0.
+    const base = isDecider() ? 3 : 0;
+    const escalate = roundEscalation()*1;           // -1 zone width per round elapsed
+    const band = Math.max(0, momentum())*1.2;        // leading shrinks your zones a bit
+    return base + escalate + band;
+  }
+  // When you're TRAILING, widen your zones slightly (the easier half of the rubber-band).
+  function roundZoneBonus(){ return Math.max(0, -momentum())*1.5; }
   function roundDmgMult(){ return isDecider() ? 1.25 : 1; }
 
   function stopMarker(){
@@ -1225,9 +1243,9 @@ export default function App(){
   // Judge where the marker landed relative to center (50)
   function judge(tier,phase,forKey){
     let {perfect,good}=zoneFor(tier,phase,forKey);
-    const pen=roundZonePenalty();
-    perfect=Math.max(2,perfect-pen);
-    good=Math.max(perfect+3,good-pen);
+    const net=roundZonePenalty()-roundZoneBonus(); // penalty tightens (leader), bonus widens (trailer)
+    perfect=Math.max(2,perfect-net);
+    good=Math.max(perfect+3,good-net);
     const d=Math.abs(markerPos-50);
     if(d<=perfect) return "perfect";
     if(d<=good) return "good";
