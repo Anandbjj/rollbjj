@@ -258,7 +258,7 @@ function optimize(url) {
 // 1 = no change. Tune these by eye until all warriors look roughly the same on-screen size.
 const ART_SCALE = {
   mongol: 1, knight: 1, viking: 1, samurai: 1, spartan: 1,
-  roman: 1.35, khan: 1.35, aztec: 1.35, cleopatra: 1.35, napoleon: 1.35, // premium warriors render bigger
+  roman: 1.2, khan: 1.2, aztec: 1.2, cleopatra: 1.2, napoleon: 1.2, // premium warriors render slightly bigger
 };
 
 function WarriorArt({ warriorKey, tier, flip, scale = 1, size = 150 }) {
