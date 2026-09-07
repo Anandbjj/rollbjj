@@ -968,6 +968,12 @@ export default function App(){
   const [newClubName,setNewClubName]=useState("");
   const [joinCode,setJoinCode]=useState("");
   const [boardMembers,setBoardMembers]=useState(null); // fetched clubmates for leaderboard, or null while loading
+  // ─── Realtime duels (6a: presence + challenge) ───
+  const [onlineMembers,setOnlineMembers]=useState([]);   // [{userId, name, line}] currently online in club
+  const [incomingChallenge,setIncomingChallenge]=useState(null); // {fromId, fromName} someone challenging you
+  const [outgoingChallenge,setOutgoingChallenge]=useState(null); // {toId, toName} you're waiting on
+  const [challengeMsg,setChallengeMsg]=useState("");     // small status line
+  const clubChannelRef=useRef(null);                     // the realtime channel object
   const [belt,setBelt]=useState(saved?.belt ?? "white");
   const [stripes,setStripes]=useState(saved?.stripes ?? 0);
   const [now,setNow]=useState(new Date());
@@ -1217,6 +1223,72 @@ export default function App(){
     })();
     return ()=>{cancelled=true;};
   },[session]);
+
+  // ─── Realtime: join the club channel for presence + challenges ───
+  useEffect(()=>{
+    if(!session || !club || !warrior){ return; }
+    const myId=session.user.id;
+    const myName=profileName || (session.user.email||"Fighter").split("@")[0];
+    const channel=supabase.channel(`club-${club.id}`, {
+      config: { presence: { key: myId } },
+    });
+    clubChannelRef.current=channel;
+
+    // Presence: track who's online
+    channel.on("presence", { event: "sync" }, ()=>{
+      const state=channel.presenceState();
+      const list=[];
+      Object.keys(state).forEach((key)=>{
+        const meta=state[key][0]||{};
+        if(key!==myId) list.push({ userId:key, name:meta.name||"Fighter", line:meta.line||"mongol" });
+      });
+      setOnlineMembers(list);
+    });
+
+    // Challenge messages (broadcast) directed at specific users
+    channel.on("broadcast", { event: "challenge" }, ({payload})=>{
+      if(payload.toId===myId){ setIncomingChallenge({ fromId:payload.fromId, fromName:payload.fromName }); }
+    });
+    channel.on("broadcast", { event: "challenge_response" }, ({payload})=>{
+      if(payload.toId===myId){
+        if(payload.accepted){ setChallengeMsg(`${payload.fromName} accepted! (live duel coming in 6b)`); setOutgoingChallenge(null); }
+        else { setChallengeMsg(`${payload.fromName} declined.`); setOutgoingChallenge(null); }
+        setTimeout(()=>setChallengeMsg(""), 3000);
+      }
+    });
+    channel.on("broadcast", { event: "challenge_cancel" }, ({payload})=>{
+      if(payload.toId===myId){ setIncomingChallenge(null); }
+    });
+
+    channel.subscribe(async(status)=>{
+      if(status==="SUBSCRIBED"){
+        await channel.track({ name:myName, line:warriorKey });
+      }
+    });
+
+    return ()=>{ supabase.removeChannel(channel); clubChannelRef.current=null; setOnlineMembers([]); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[session,club,warriorKey,profileName]);
+
+  function sendChallenge(toId,toName){
+    if(!clubChannelRef.current||!session) return;
+    const myName=profileName || (session.user.email||"Fighter").split("@")[0];
+    clubChannelRef.current.send({ type:"broadcast", event:"challenge", payload:{ fromId:session.user.id, fromName:myName, toId } });
+    setOutgoingChallenge({ toId, toName });
+  }
+  function cancelChallenge(){
+    if(clubChannelRef.current&&outgoingChallenge){
+      clubChannelRef.current.send({ type:"broadcast", event:"challenge_cancel", payload:{ toId:outgoingChallenge.toId } });
+    }
+    setOutgoingChallenge(null);
+  }
+  function respondChallenge(accepted){
+    if(!clubChannelRef.current||!incomingChallenge||!session) return;
+    const myName=profileName || (session.user.email||"Fighter").split("@")[0];
+    clubChannelRef.current.send({ type:"broadcast", event:"challenge_response", payload:{ fromId:session.user.id, fromName:myName, toId:incomingChallenge.fromId, accepted } });
+    if(accepted){ setChallengeMsg(`You accepted ${incomingChallenge.fromName}'s challenge! (live duel coming in 6b)`); setTimeout(()=>setChallengeMsg(""),3000); }
+    setIncomingChallenge(null);
+  }
 
   function genJoinCode(){
     const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no confusing 0/O/1/I
@@ -1909,6 +1981,19 @@ export default function App(){
         </div></div>
       )}
 
+      {incomingChallenge&&session&&(
+        <div style={Z.detailOverlay}>
+          <div style={Z.detailSheet}>
+            <div style={Z.detailTitle}>⚔️ Duel Challenge!</div>
+            <p style={Z.compHint}><b style={{color:"#EDEFF2"}}>{incomingChallenge.fromName}</b> wants to duel you.</p>
+            <div style={{display:"flex",gap:8,marginTop:12}}>
+              <button className="act" style={Z.skipBtn} onClick={()=>respondChallenge(false)}>Decline</button>
+              <button className="act" style={{...Z.saveBtn,background:warrior?warrior.accent:"#C9A15A"}} onClick={()=>respondChallenge(true)}>Accept</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {newlyUnlocked&&warriorKey&&screen!=="intro"&&screen!=="quiz"&&screen!=="reveal"&&(
         <div style={Z.evoOverlay}><div style={{...Z.evoCard,animation:"burstIn 0.45s cubic-bezier(0.22,1,0.36,1)"}}>
           <div style={Z.evoKicker}>New warrior unlocked!</div>
@@ -1999,6 +2084,28 @@ export default function App(){
 
             {/* Pre-fight setup (idle only) */}
             {duelPhase==="idle"&&(<>
+              {/* Live: online clubmates you can challenge */}
+              {club && (
+                <div style={Z.onlineBox}>
+                  <div style={Z.onlineTitle}>🟢 Online in {club.name}</div>
+                  {onlineMembers.length===0 ? (
+                    <div style={Z.onlineEmpty}>No clubmates online right now. Challenge the CPU below, or invite your gym to log on!</div>
+                  ) : (
+                    onlineMembers.map((m)=>(
+                      <div key={m.userId} style={Z.onlineRow}>
+                        <span style={Z.onlineName}>{m.name}</span>
+                        <button className="stp" style={Z.challengeBtn}
+                          onClick={()=>sendChallenge(m.userId,m.name)}
+                          disabled={!!outgoingChallenge}>
+                          {outgoingChallenge&&outgoingChallenge.toId===m.userId?"Waiting…":"Challenge"}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                  {challengeMsg&&<div style={Z.challengeMsg}>{challengeMsg}</div>}
+                </div>
+              )}
+              <div style={Z.cpuLabel}>— or duel the CPU —</div>
               <div style={Z.oppTabs}>{Object.entries(WARRIORS).filter(([k])=>k!==warriorKey&&!WARRIORS[k].premium).map(([key,w])=>(<button key={key} className="stp" onClick={()=>{setOppKey(key);}} style={{...Z.tab,borderColor:oppKey===key?w.accent:"rgba(255,255,255,0.1)",color:oppKey===key?w.accent:"#5D6673"}}>{w.name.split(" ")[0]}</button>))}</div>
               <div style={Z.stepperRow}><span style={Z.stepText}>Opponent rank</span><button className="stp" style={Z.stepBtn} onClick={()=>setOppTier((t)=>Math.max(0,t-1))}>−</button><span style={Z.stepText}>{oppTier+1}</span><button className="stp" style={Z.stepBtn} onClick={()=>setOppTier((t)=>Math.min(3,t+1))}>+</button></div>
               <div style={Z.formatLabel}>Match length</div>
@@ -2731,4 +2838,12 @@ const Z={
   verBadge:{fontSize:9,color:"#5AB48C",fontWeight:600,marginLeft:4},
   boardFoot:{fontSize:10.5,lineHeight:1.5,color:"#5D6673",marginTop:12},
   boardEmpty:{fontSize:13.5,lineHeight:1.6,color:"#8B95A3",textAlign:"center",marginTop:30,padding:"0 10px"},
+  onlineBox:{background:"#1D232D",border:"1px solid rgba(90,180,140,0.25)",borderRadius:12,padding:"12px",marginBottom:10},
+  onlineTitle:{fontSize:12.5,fontWeight:700,color:"#5AB48C",marginBottom:8},
+  onlineEmpty:{fontSize:11.5,lineHeight:1.5,color:"#8B95A3"},
+  onlineRow:{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 0"},
+  onlineName:{fontSize:13,fontWeight:600,color:"#EDEFF2"},
+  challengeBtn:{background:"#5AB48C",border:"none",color:"#14181F",borderRadius:8,padding:"6px 12px",fontSize:11.5,fontWeight:700},
+  challengeMsg:{fontSize:11.5,color:"#5AB48C",marginTop:8,textAlign:"center"},
+  cpuLabel:{fontSize:11,color:"#5D6673",textAlign:"center",margin:"4px 0 8px"},
 };
