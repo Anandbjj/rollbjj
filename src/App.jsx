@@ -1253,10 +1253,13 @@ export default function App(){
   },[session]);
 
   // ─── Realtime: join the club channel for presence + challenges ───
+  // Runs app-wide whenever you're logged in and in a club — so you show online
+  // and can be challenged from ANY screen, not just the duel page.
   useEffect(()=>{
-    if(!session || !club || !warrior){ return; }
+    if(!session || !club){ return; }
     const myId=session.user.id;
     const myName=profileName || (session.user.email||"Fighter").split("@")[0];
+    const myLine=warriorKey || "mongol";
     const channel=supabase.channel(`club-${club.id}`, {
       config: { presence: { key: myId } },
     });
@@ -1290,7 +1293,7 @@ export default function App(){
 
     channel.subscribe(async(status)=>{
       if(status==="SUBSCRIBED"){
-        await channel.track({ name:myName, line:warriorKey });
+        await channel.track({ name:myName, line:myLine });
       }
     });
 
