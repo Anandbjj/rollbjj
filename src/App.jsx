@@ -977,6 +977,13 @@ export default function App(){
   // ─── Live duel (6b: shared room) ───
   const [liveMatch,setLiveMatch]=useState(null); // { matchId, opponentId, opponentName, opponentLine, iAmHost }
   const liveChannelRef=useRef(null);              // dedicated realtime channel for the active match
+  // ─── Live gameplay state (6c) — host is authoritative; both display this ───
+  // gs = shared game state, broadcast by host. { hpHost, hpGuest, turn:"host"|"guest", phase, round, hostWins, guestWins, log, over, winner }
+  const [liveGame,setLiveGame]=useState(null);
+  const [liveMarker,setLiveMarker]=useState(0);   // local sweeping marker for MY turn
+  const [liveLocked,setLiveLocked]=useState(null);// my locked result this turn
+  const liveMarkerRef=useRef({dir:1,raf:null,active:false});
+  const liveGameRef=useRef(null);                 // host's mutable copy of game state
   const [belt,setBelt]=useState(saved?.belt ?? "white");
   const [stripes,setStripes]=useState(saved?.stripes ?? 0);
   const [now,setNow]=useState(new Date());
@@ -1338,18 +1345,30 @@ export default function App(){
     // Clean up any prior match channel
     if(liveChannelRef.current){ supabase.removeChannel(liveChannelRef.current); liveChannelRef.current=null; }
     setLiveMatch({ matchId, opponentId, opponentName, opponentLine, iAmHost, connected:false });
+    setLiveGame(null); liveGameRef.current=null;
     const ch=supabase.channel(`match-${matchId}`);
     liveChannelRef.current=ch;
-    // When both are present, mark connected.
+    // When both are present, mark connected — and the HOST kicks off the game.
     ch.on("presence", { event:"sync" }, ()=>{
       const state=ch.presenceState();
       const count=Object.keys(state).length;
       setLiveMatch((m)=> m ? { ...m, connected: count>=2 } : m);
+      if(count>=2 && iAmHost && !liveGameRef.current){
+        hostStartGame();
+      }
     });
-    // Listen for the opponent leaving the match.
+    // Host receives a guest's tap and resolves it.
+    ch.on("broadcast", { event:"tap" }, ({payload})=>{
+      if(iAmHost) hostResolveTap(payload.by, payload.result);
+    });
+    // Both receive the authoritative game state from the host.
+    ch.on("broadcast", { event:"gamestate" }, ({payload})=>{
+      setLiveGame(payload);
+    });
     ch.on("broadcast", { event:"leave_match" }, ()=>{
       setChallengeMsg(`${opponentName} left the duel.`);
       setTimeout(()=>setChallengeMsg(""),3000);
+      stopLiveMarker();
       exitLiveMatch();
     });
     ch.subscribe(async(status)=>{
@@ -1358,15 +1377,103 @@ export default function App(){
     setOppKey(opponentLine||"mongol");
     setScreen("liveduel");
   }
+
+  // ── HOST game logic (authoritative) ──
+  function broadcastState(gs){
+    liveGameRef.current=gs;
+    setLiveGame(gs);
+    if(liveChannelRef.current) liveChannelRef.current.send({ type:"broadcast", event:"gamestate", payload:gs });
+  }
+  function hostStartGame(){
+    const gs={
+      hpHost:100, hpGuest:100,
+      turn:"host",           // whose attack it is
+      round:1, hostWins:0, guestWins:0,
+      log:"Host attacks first — tap in the center!",
+      over:false, winner:null,
+    };
+    broadcastState(gs);
+  }
+  // Resolve a tap from whichever side is attacking. `by` = "host"|"guest", result = "perfect"|"good"|"miss"
+  function hostResolveTap(by, result){
+    const gs=liveGameRef.current;
+    if(!gs || gs.over) return;
+    if(gs.turn!==by) return; // not their turn, ignore
+    let dmg = result==="perfect" ? 30 : result==="good" ? 18 : 7;
+    let hpHost=gs.hpHost, hpGuest=gs.hpGuest;
+    if(by==="host") hpGuest=Math.max(0,hpGuest-dmg);
+    else hpHost=Math.max(0,hpHost-dmg);
+    const attackerName = by==="host" ? "Host" : "Guest";
+    let log = `${attackerName} lands a ${result==="perfect"?"CRITICAL":result==="good"?"clean":"glancing"} hit for ${dmg}!`;
+
+    // Check round end
+    let { round, hostWins, guestWins } = gs;
+    if(hpHost<=0 || hpGuest<=0){
+      if(hpGuest<=0) hostWins++; else guestWins++;
+      if(hostWins>=2 || guestWins>=2){
+        // Match over
+        broadcastState({ ...gs, hpHost, hpGuest, over:true, winner: hostWins>guestWins?"host":"guest", log:`${hostWins>guestWins?"Host":"Guest"} wins the match!` });
+        return;
+      }
+      // Next round
+      broadcastState({ ...gs, hpHost:100, hpGuest:100, round:round+1, hostWins, guestWins, turn:"host", log:`Round ${round+1}! Host attacks — tap center!` });
+      return;
+    }
+    // Swap turn
+    const nextTurn = by==="host" ? "guest" : "host";
+    broadcastState({ ...gs, hpHost, hpGuest, turn:nextTurn, log:`${nextTurn==="host"?"Host":"Guest"} attacks — tap center!` });
+  }
+
+  // ── Both sides: when it's MY attack turn, sweep a marker; on tap, judge and send result ──
+  function myLiveRole(){ return liveMatch?.iAmHost ? "host" : "guest"; }
+  function stopLiveMarker(){
+    liveMarkerRef.current.active=false;
+    if(liveMarkerRef.current.raf) cancelAnimationFrame(liveMarkerRef.current.raf);
+    liveMarkerRef.current.raf=null;
+  }
+  function startLiveMarker(){
+    stopLiveMarker(); setLiveLocked(null);
+    liveMarkerRef.current={dir:1,raf:null,active:true};
+    const step=()=>{
+      if(!liveMarkerRef.current.active) return;
+      setLiveMarker((p)=>{ let np=p+liveMarkerRef.current.dir*2.2; if(np>=100){np=100;liveMarkerRef.current.dir=-1;} if(np<=0){np=0;liveMarkerRef.current.dir=1;} return np; });
+      liveMarkerRef.current.raf=requestAnimationFrame(step);
+    };
+    liveMarkerRef.current.raf=requestAnimationFrame(step);
+  }
+  function liveTap(){
+    if(!liveGame || liveGame.over) return;
+    if(liveGame.turn!==myLiveRole()) return; // not my turn
+    stopLiveMarker();
+    const d=Math.abs(liveMarker-50);
+    const result = d<=7 ? "perfect" : d<=18 ? "good" : "miss";
+    setLiveLocked({result, at:liveMarker});
+    if(liveMatch.iAmHost){
+      hostResolveTap("host", result); // host resolves its own tap directly
+    } else {
+      liveChannelRef.current.send({ type:"broadcast", event:"tap", payload:{ by:"guest", result } });
+    }
+  }
+
   function exitLiveMatch(){
+    stopLiveMarker();
     if(liveChannelRef.current){
       liveChannelRef.current.send({ type:"broadcast", event:"leave_match", payload:{} });
       supabase.removeChannel(liveChannelRef.current);
       liveChannelRef.current=null;
     }
-    setLiveMatch(null);
+    setLiveMatch(null); setLiveGame(null); liveGameRef.current=null;
     setScreen("home");
   }
+
+  // When it becomes MY attack turn in a live game, start my timing marker.
+  useEffect(()=>{
+    if(!liveGame || liveGame.over){ stopLiveMarker(); return; }
+    if(liveGame.turn===myLiveRole()){ startLiveMarker(); }
+    else { stopLiveMarker(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[liveGame?.turn, liveGame?.round, liveGame?.over]);
+
 
   function genJoinCode(){
     const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no confusing 0/O/1/I
@@ -2083,34 +2190,77 @@ export default function App(){
 
       {screen==="liveduel"&&warrior&&liveMatch&&(()=>{
         const opp=WARRIORS[liveMatch.opponentLine]||WARRIORS.mongol;
+        const role=liveMatch.iAmHost?"host":"guest";
+        const gs=liveGame;
+        // My HP vs opponent HP mapped from host/guest
+        const myHp = gs ? (role==="host"?gs.hpHost:gs.hpGuest) : 100;
+        const oppHp = gs ? (role==="host"?gs.hpGuest:gs.hpHost) : 100;
+        const myWins = gs ? (role==="host"?gs.hostWins:gs.guestWins) : 0;
+        const oppWins = gs ? (role==="host"?gs.guestWins:gs.hostWins) : 0;
+        const myTurn = gs && !gs.over && gs.turn===role;
+        const iWon = gs && gs.over && gs.winner===role;
         return (
-          <div style={Z.duelWrap}>
-            <button style={Z.backBtn} onClick={exitLiveMatch}>← Leave duel</button>
-            <div style={Z.liveTag}>🔴 LIVE DUEL</div>
+          <div style={Z.duelWrap} onClick={myTurn?liveTap:undefined}>
+            <button style={Z.backBtn} onClick={(e)=>{e.stopPropagation();exitLiveMatch();}}>← Leave duel</button>
+            <div style={Z.liveTag}>🔴 LIVE DUEL{gs?` · Round ${gs.round}`:""}</div>
+
+            {/* Round score */}
+            {gs&&(
+              <div style={Z.roundScoreRow}>
+                <div style={Z.roundDots}>{[0,1].map((i)=><div key={"m"+i} style={{...Z.roundDot,background:i<myWins?warrior.accent:"rgba(255,255,255,0.15)"}}/>)}</div>
+                <span style={{...Z.roundLabel,color:"#8B95A3"}}>Best of 3</span>
+                <div style={Z.roundDots}>{[0,1].map((i)=><div key={"o"+i} style={{...Z.roundDot,background:i<oppWins?opp.accent:"rgba(255,255,255,0.15)"}}/>)}</div>
+              </div>
+            )}
+
+            {/* HP bars */}
+            {gs&&(
+              <div style={{display:"flex",gap:12,marginBottom:8}}>
+                <div style={{flex:1}}><div style={{fontSize:10,color:"#8B95A3",marginBottom:3}}>{profileName||"You"}</div><div style={Z.hpTrack}><div style={{...Z.hpFill,width:`${myHp}%`,background:warrior.accent,transition:"width 0.35s"}}/></div></div>
+                <div style={{flex:1}}><div style={{fontSize:10,color:"#8B95A3",marginBottom:3,textAlign:"right"}}>{liveMatch.opponentName}</div><div style={Z.hpTrack}><div style={{...Z.hpFill,width:`${oppHp}%`,background:opp.accent,transition:"width 0.35s"}}/></div></div>
+              </div>
+            )}
+
+            {/* Fighters */}
             <div style={Z.liveVs}>
               <div style={Z.fCol}>
-                <WarriorArt warriorKey={warriorKey} tier={tierIndex} size={110}/>
+                <WarriorArt warriorKey={warriorKey} tier={tierIndex} size={104}/>
                 <div style={{...Z.fLbl,color:warrior.accent}}>{profileName||"You"}</div>
               </div>
-              <div style={Z.vs}>VS</div>
+              <div style={Z.vs}>{myTurn?"⚔":"VS"}</div>
               <div style={Z.fCol}>
-                <div style={{transform:"scaleX(-1)"}}><WarriorArt warriorKey={liveMatch.opponentLine} tier={0} size={110}/></div>
+                <div style={{transform:"scaleX(-1)"}}><WarriorArt warriorKey={liveMatch.opponentLine} tier={0} size={104}/></div>
                 <div style={{...Z.fLbl,color:opp.accent}}>{liveMatch.opponentName}</div>
               </div>
             </div>
-            <div style={Z.liveStatus}>
-              {liveMatch.connected ? (
-                <>
-                  <div style={{...Z.liveStatusMain,color:"#5AB48C"}}>✓ Connected!</div>
-                  <div style={Z.liveStatusSub}>Both fighters are in the room. Live gameplay is coming next (6c) — for now this confirms the realtime connection works.</div>
-                </>
-              ) : (
-                <>
-                  <div style={{...Z.liveStatusMain,color:"#E8935A"}}>Connecting to {liveMatch.opponentName}…</div>
-                  <div style={Z.liveStatusSub}>Waiting for both fighters to join the room.</div>
-                </>
-              )}
-            </div>
+
+            {/* Status / gameplay */}
+            {!liveMatch.connected ? (
+              <div style={Z.liveStatus}><div style={{...Z.liveStatusMain,color:"#E8935A"}}>Connecting to {liveMatch.opponentName}…</div></div>
+            ) : !gs ? (
+              <div style={Z.liveStatus}><div style={{...Z.liveStatusMain,color:"#5AB48C"}}>Starting duel…</div></div>
+            ) : gs.over ? (
+              <div style={Z.resBox}>
+                <div style={{...Z.resBanner,color:iWon?"#3E9B7F":"#B33A3A"}}>{iWon?"Victory":"Defeat"}</div>
+                <p style={Z.narr}>{iWon?`You beat ${liveMatch.opponentName}!`:`${liveMatch.opponentName} won this time.`}</p>
+                <button className="act" style={{...Z.duelBtn,marginTop:12}} onClick={(e)=>{e.stopPropagation();exitLiveMatch();}}>Done</button>
+              </div>
+            ) : (
+              <div style={{marginTop:4}}>
+                <div style={{...Z.duelLog,color:myTurn?warrior.accent:"#8B95A3"}}>{myTurn?"YOUR TURN — tap anywhere in the center!":`${liveMatch.opponentName}'s turn…`}</div>
+                {myTurn&&(
+                  <>
+                    <div style={Z.timingTrack}>
+                      <div style={{position:"absolute",top:0,bottom:0,left:"32%",width:"36%",background:"rgba(90,180,140,0.18)"}}/>
+                      <div style={{position:"absolute",top:0,bottom:0,left:"43%",width:"14%",background:"rgba(232,201,94,0.35)"}}/>
+                      <div style={{position:"absolute",top:0,bottom:0,left:"50%",width:2,background:"rgba(255,255,255,0.5)",transform:"translateX(-1px)"}}/>
+                      <div style={{position:"absolute",top:-3,bottom:-3,left:`${liveLocked?liveLocked.at:liveMarker}%`,width:4,borderRadius:2,background:liveLocked?(liveLocked.result==="perfect"?"#E8C95E":liveLocked.result==="good"?"#5AB48C":"#B33A3A"):"#FFF",transform:"translateX(-2px)",boxShadow:"0 0 8px rgba(255,255,255,0.6)"}}/>
+                    </div>
+                    <div style={Z.timingHint}>TAP ANYWHERE</div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         );
       })()}
