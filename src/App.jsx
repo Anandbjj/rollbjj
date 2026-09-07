@@ -967,6 +967,7 @@ export default function App(){
   const [clubError,setClubError]=useState("");
   const [newClubName,setNewClubName]=useState("");
   const [joinCode,setJoinCode]=useState("");
+  const [boardMembers,setBoardMembers]=useState(null); // fetched clubmates for leaderboard, or null while loading
   const [belt,setBelt]=useState(saved?.belt ?? "white");
   const [stripes,setStripes]=useState(saved?.stripes ?? 0);
   const [now,setNow]=useState(new Date());
@@ -1163,7 +1164,42 @@ export default function App(){
   function goProfile(){setScreen("profile");}
   function goDuel(){stopMarker();setDuelPhase("idle");setDuelResult(null);setHpYou(100);setHpOpp(100);setDuelLog("");setLockedZone(null);setHomeField(null);setRoundWins({you:0,opp:0});setRoundNum(1);setScreen("duel");}
   function goShop(){setScreen("shop");}
-  function goBoard(){setScreen("board");}
+  async function goBoard(){
+    setScreen("board");
+    setBoardMembers(null); // show loading
+    if(!session || !club){ setBoardMembers([]); return; }
+    try{
+      // Get everyone in my club + their display names
+      const { data: members, error: e1 } = await supabase
+        .from("club_members").select("user_id, display_name").eq("club_id", club.id);
+      if(e1) throw e1;
+      const ids=(members||[]).map((m)=>m.user_id);
+      if(ids.length===0){ setBoardMembers([]); return; }
+      // Get their saved progress
+      const { data: profs, error: e2 } = await supabase
+        .from("profiles").select("id, data").in("id", ids);
+      if(e2) throw e2;
+      const profMap={}; (profs||[]).forEach((p)=>{ profMap[p.id]=p.data||{}; });
+      // Build leaderboard rows from real data
+      const rows=(members||[]).map((m)=>{
+        const d=profMap[m.user_id]||{};
+        const wk=d.warriorKey||"mongol";
+        // Sum base-warrior points as the ranking score (matches how the app counts training)
+        const pts=["mongol","knight","viking","samurai","spartan"].reduce((s,k)=>s+((d.warriorProgress&&d.warriorProgress[k])||0),0);
+        return {
+          name: m.display_name || (d.profileName) || "Fighter",
+          line: wk,
+          points: pts,
+          streak: d.streak||0,
+          isYou: m.user_id===session.user.id,
+        };
+      }).sort((a,b)=>b.points-a.points);
+      setBoardMembers(rows);
+    }catch(e){
+      console.error("leaderboard load failed", e);
+      setBoardMembers([]);
+    }
+  }
   function goHistory(){setScreen("history");}
   // ─── Clubs: load the user's club when logged in ───
   useEffect(()=>{
@@ -2015,32 +2051,44 @@ export default function App(){
       })()}
 
       {screen==="board"&&warrior&&(()=>{
-        const you={name:"You",line:warriorKey,points,streak,verified:false,isYou:true};
-        const all=[...GYM_MEMBERS,you].sort((a,b)=>b.points-a.points);
+        const all=boardMembers||[];
+        const rank=(pts)=>THRESHOLDS.filter((t)=>pts>=t).length-1;
         return (
           <div style={Z.boardWrap}>
             <button style={Z.backBtn} onClick={goMore}>← Back</button>
-            <h2 style={Z.boardTitle}>Gym Leaderboard</h2>
-            <p style={Z.boardSub}>{GYM_NAME} · this month</p>
-            <div style={Z.boardList}>
-              {all.map((m,i)=>{
-                const w=WARRIORS[m.line];
-                return (
-                  <div key={m.name} style={{...Z.boardRow,...(m.isYou?{background:"rgba(201,161,90,0.12)",border:`1px solid ${warrior.accent}`}:{})}}>
-                    <div style={{...Z.boardRank,color:i<3?"#E8C95E":"#5D6673"}}>{i+1}</div>
-                    <div style={{width:34,height:34,borderRadius:9,overflow:"hidden",flexShrink:0,background:"#05070A",display:"flex",alignItems:"center",justifyContent:"center",border:`1px solid ${w.accent}44`}}>
-                      <WarriorArt warriorKey={m.line} tier={THRESHOLDS.filter((t)=>m.points>=t).length-1} size={34}/>
+            <h2 style={Z.boardTitle}>Club Leaderboard</h2>
+            <p style={Z.boardSub}>{club?`${club.name} · this month`:"Not in a club yet"}</p>
+            {!club ? (
+              <div style={Z.boardEmpty}>
+                Join or create a club to see a leaderboard with your training partners.
+                <button className="act" style={{...Z.primaryBtn,marginTop:16}} onClick={goClub}>Go to Clubs</button>
+              </div>
+            ) : boardMembers===null ? (
+              <div style={Z.boardEmpty}>Loading your club…</div>
+            ) : all.length===0 ? (
+              <div style={Z.boardEmpty}>No members yet. Share your join code <b style={{color:"#E8935A"}}>{club.join_code}</b> with your training partners!</div>
+            ) : (
+              <div style={Z.boardList}>
+                {all.map((m,i)=>{
+                  const w=WARRIORS[m.line]||WARRIORS.mongol;
+                  const tIdx=rank(m.points);
+                  return (
+                    <div key={i} style={{...Z.boardRow,...(m.isYou?{background:`${warrior.accent}1f`,border:`1px solid ${warrior.accent}`}:{})}}>
+                      <div style={{...Z.boardRank,color:i<3?"#E8C95E":"#5D6673"}}>{i+1}</div>
+                      <div style={{width:34,height:34,borderRadius:9,overflow:"hidden",flexShrink:0,background:"#05070A",display:"flex",alignItems:"center",justifyContent:"center",border:`1px solid ${w.accent}44`}}>
+                        <WarriorArt warriorKey={m.line} tier={tIdx} size={34}/>
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={Z.boardName}>{m.name}{m.isYou?" (you)":""}</div>
+                        <div style={Z.boardMeta}>{w.titles[tIdx]} · 🔥{m.streak}</div>
+                      </div>
+                      <div style={{...Z.boardPts,color:m.isYou?warrior.accent:"#EDEFF2"}}>{m.points}</div>
                     </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={Z.boardName}>{m.name}{m.isYou?"":""} {m.verified&&<span style={Z.verBadge}>✓ verified</span>}</div>
-                      <div style={Z.boardMeta}>{w.titles[THRESHOLDS.filter((t)=>m.points>=t).length-1]} · 🔥{m.streak}</div>
-                    </div>
-                    <div style={{...Z.boardPts,color:m.isYou?warrior.accent:"#EDEFF2"}}>{m.points}</div>
-                  </div>
-                );
-              })}
-            </div>
-            <p style={Z.boardFoot}>✓ verified = attendance confirmed by the gym's check-in. Self-logged training counts too, but only verified logs earn the badge.</p>
+                  );
+                })}
+              </div>
+            )}
+            {club&&all.length>0&&<p style={Z.boardFoot}>Ranked by total training points. Everyone's progress updates as they log real classes.</p>}
           </div>
         );
       })()}
@@ -2682,4 +2730,5 @@ const Z={
   boardPts:{fontFamily:"'Bebas Neue', sans-serif",fontSize:20},
   verBadge:{fontSize:9,color:"#5AB48C",fontWeight:600,marginLeft:4},
   boardFoot:{fontSize:10.5,lineHeight:1.5,color:"#5D6673",marginTop:12},
+  boardEmpty:{fontSize:13.5,lineHeight:1.6,color:"#8B95A3",textAlign:"center",marginTop:30,padding:"0 10px"},
 };
