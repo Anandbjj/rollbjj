@@ -1050,6 +1050,53 @@ export default function App(){
     setSession(null);
   }
 
+  // Applies a saved data object to all the game state at once (used by cloud load).
+  function applySave(d){
+    if(!d) return;
+    setWarriorKey(d.warriorKey ?? null);
+    setWarriorProgress(d.warriorProgress ?? {mongol:0,knight:0,viking:0,samurai:0,spartan:0});
+    setUnlockedWarriors(d.unlockedWarriors ?? []);
+    setStreak(d.streak ?? 0);
+    setRecord(d.record ?? {w:0,l:0});
+    setSessions(d.sessions ?? []);
+    setLastCompDateStr(d.lastCompDateStr ?? null);
+    setSchedule(d.schedule ?? DEFAULT_SCHEDULE);
+    setLastClassLogStr(d.lastClassLogStr ?? null);
+    setProfileName(d.profileName ?? "");
+    setBelt(d.belt ?? "white");
+    setStripes(d.stripes ?? 0);
+    setOwnedPremium(d.ownedPremium ?? []);
+    if(d.warriorKey) setScreen("home");
+  }
+
+  // ─── Cloud load: when a user logs in, pull their saved progress from Supabase ───
+  const [cloudLoaded,setCloudLoaded]=useState(false);
+  useEffect(()=>{
+    if(!session){ setCloudLoaded(false); return; }
+    let cancelled=false;
+    (async()=>{
+      try{
+        const { data, error } = await supabase
+          .from("profiles").select("data").eq("id", session.user.id).maybeSingle();
+        if(cancelled) return;
+        if(error) throw error;
+        if(data && data.data){
+          // Cloud has a save → use it (source of truth across devices).
+          applySave(data.data);
+        }
+        // If no cloud row yet, we keep whatever local/current state there is and
+        // it'll get pushed up by the save effect below (creating their cloud row).
+      }catch(e){
+        // On any error, fall back to local state silently — don't block the app.
+        console.error("cloud load failed", e);
+      }finally{
+        if(!cancelled) setCloudLoaded(true);
+      }
+    })();
+    return ()=>{cancelled=true;};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[session]);
+
   // Keep "now" fresh so the schedule status (upcoming/ongoing/done) updates on its own.
   useEffect(()=>{
     const id=setInterval(()=>setNow(new Date()),30000);
@@ -1064,6 +1111,25 @@ export default function App(){
       profileName, belt, stripes, ownedPremium,
     });
   },[warriorKey,warriorProgress,unlockedWarriors,streak,record,sessions,lastCompDateStr,schedule,lastClassLogStr,profileName,belt,stripes,ownedPremium]);
+
+  // ─── Cloud save: push progress to Supabase (debounced) once logged in & loaded ───
+  useEffect(()=>{
+    if(!session || !cloudLoaded) return; // don't save until we've loaded cloud data first
+    const payload = {
+      warriorKey, warriorProgress, unlockedWarriors, streak,
+      record, sessions, lastCompDateStr, schedule, lastClassLogStr,
+      profileName, belt, stripes, ownedPremium,
+    };
+    const t=setTimeout(async()=>{
+      try{
+        await supabase.from("profiles").upsert({
+          id: session.user.id, data: payload, updated_at: new Date().toISOString(),
+        });
+      }catch(e){ console.error("cloud save failed", e); }
+    }, 1200); // wait 1.2s after changes settle, then push
+    return ()=>clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[session,cloudLoaded,warriorKey,warriorProgress,unlockedWarriors,streak,record,sessions,lastCompDateStr,schedule,lastClassLogStr,profileName,belt,stripes,ownedPremium]);
 
   function setActiveWarrior(key){
     // A warrior is usable if it's unlocked (base) OR owned (premium).
