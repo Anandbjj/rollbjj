@@ -1387,45 +1387,71 @@ export default function App(){
   function hostStartGame(){
     const gs={
       hpHost:100, hpGuest:100,
-      turn:"host",           // whose attack it is
+      attacker:"host",       // who is attacking this exchange
+      phase:"attack",        // "attack" (attacker times strike) then "defend" (defender times block)
+      pendingAttack:null,    // stored attacker result while waiting for defender
       round:1, hostWins:0, guestWins:0,
-      log:"Host attacks first — tap in the center!",
+      log:"Host attacks — tap center to strike!",
       over:false, winner:null,
     };
     broadcastState(gs);
   }
-  // Resolve a tap from whichever side is attacking. `by` = "host"|"guest", result = "perfect"|"good"|"miss"
+  // Resolve a tap. `by` = "host"|"guest", result = "perfect"|"good"|"miss".
+  // Two-phase: attacker's tap is stored, then defender's tap resolves the exchange.
   function hostResolveTap(by, result){
     const gs=liveGameRef.current;
     if(!gs || gs.over) return;
-    if(gs.turn!==by) return; // not their turn, ignore
-    let dmg = result==="perfect" ? 30 : result==="good" ? 18 : 7;
-    let hpHost=gs.hpHost, hpGuest=gs.hpGuest;
-    if(by==="host") hpGuest=Math.max(0,hpGuest-dmg);
-    else hpHost=Math.max(0,hpHost-dmg);
-    const attackerName = by==="host" ? "Host" : "Guest";
-    let log = `${attackerName} lands a ${result==="perfect"?"CRITICAL":result==="good"?"clean":"glancing"} hit for ${dmg}!`;
+    const defender = gs.attacker==="host" ? "guest" : "host";
 
-    // Check round end
-    let { round, hostWins, guestWins } = gs;
-    if(hpHost<=0 || hpGuest<=0){
-      if(hpGuest<=0) hostWins++; else guestWins++;
-      if(hostWins>=2 || guestWins>=2){
-        // Match over
-        broadcastState({ ...gs, hpHost, hpGuest, over:true, winner: hostWins>guestWins?"host":"guest", log:`${hostWins>guestWins?"Host":"Guest"} wins the match!` });
-        return;
-      }
-      // Next round
-      broadcastState({ ...gs, hpHost:100, hpGuest:100, round:round+1, hostWins, guestWins, turn:"host", log:`Round ${round+1}! Host attacks — tap center!` });
+    if(gs.phase==="attack"){
+      if(by!==gs.attacker) return; // only the attacker taps in attack phase
+      // Store the attack, move to defend phase.
+      broadcastState({ ...gs, phase:"defend", pendingAttack:result,
+        log:`${defender==="host"?"Host":"Guest"} — tap to BLOCK!` });
       return;
     }
-    // Swap turn
-    const nextTurn = by==="host" ? "guest" : "host";
-    broadcastState({ ...gs, hpHost, hpGuest, turn:nextTurn, log:`${nextTurn==="host"?"Host":"Guest"} attacks — tap center!` });
+
+    if(gs.phase==="defend"){
+      if(by!==defender) return; // only the defender taps in defend phase
+      // Base damage from the attack quality
+      let base = gs.pendingAttack==="perfect" ? 30 : gs.pendingAttack==="good" ? 18 : 8;
+      // Block reduces it: perfect block negates most, good halves, miss = full
+      let mult = result==="perfect" ? 0.1 : result==="good" ? 0.5 : 1;
+      let dmg = Math.round(base*mult);
+      let hpHost=gs.hpHost, hpGuest=gs.hpGuest;
+      if(gs.attacker==="host") hpGuest=Math.max(0,hpGuest-dmg);
+      else hpHost=Math.max(0,hpHost-dmg);
+      const blockNote = result==="perfect" ? "blocks it!" : result==="good" ? "partially blocks" : "fails to block!";
+      let log=`${defender==="host"?"Host":"Guest"} ${blockNote} (${dmg} dmg)`;
+
+      let { round, hostWins, guestWins } = gs;
+      if(hpHost<=0 || hpGuest<=0){
+        if(hpGuest<=0) hostWins++; else guestWins++;
+        if(hostWins>=2 || guestWins>=2){
+          broadcastState({ ...gs, hpHost, hpGuest, over:true, winner: hostWins>guestWins?"host":"guest", log:`${hostWins>guestWins?"Host":"Guest"} wins the match!` });
+          return;
+        }
+        broadcastState({ ...gs, hpHost:100, hpGuest:100, round:round+1, hostWins, guestWins, attacker:"host", phase:"attack", pendingAttack:null, log:`Round ${round+1}! Host attacks — tap to strike!` });
+        return;
+      }
+      // Swap attacker for next exchange
+      const nextAttacker = gs.attacker==="host" ? "guest" : "host";
+      broadcastState({ ...gs, hpHost, hpGuest, attacker:nextAttacker, phase:"attack", pendingAttack:null,
+        log:`${nextAttacker==="host"?"Host":"Guest"} attacks — tap to strike!` });
+    }
   }
 
-  // ── Both sides: when it's MY attack turn, sweep a marker; on tap, judge and send result ──
+  // ── Both sides: sweep a marker whenever it's MY action (attack or defend); tap to lock ──
   function myLiveRole(){ return liveMatch?.iAmHost ? "host" : "guest"; }
+  // Is it my turn to tap right now? (I attack in attack-phase, I defend in defend-phase)
+  function myLiveActive(gs){
+    if(!gs || gs.over) return false;
+    const me=myLiveRole();
+    const defender = gs.attacker==="host" ? "guest" : "host";
+    if(gs.phase==="attack") return gs.attacker===me;
+    if(gs.phase==="defend") return defender===me;
+    return false;
+  }
   function stopLiveMarker(){
     liveMarkerRef.current.active=false;
     if(liveMarkerRef.current.raf) cancelAnimationFrame(liveMarkerRef.current.raf);
@@ -1436,22 +1462,23 @@ export default function App(){
     liveMarkerRef.current={dir:1,raf:null,active:true};
     const step=()=>{
       if(!liveMarkerRef.current.active) return;
-      setLiveMarker((p)=>{ let np=p+liveMarkerRef.current.dir*2.2; if(np>=100){np=100;liveMarkerRef.current.dir=-1;} if(np<=0){np=0;liveMarkerRef.current.dir=1;} return np; });
+      setLiveMarker((p)=>{ let np=p+liveMarkerRef.current.dir*2.6; if(np>=100){np=100;liveMarkerRef.current.dir=-1;} if(np<=0){np=0;liveMarkerRef.current.dir=1;} return np; });
       liveMarkerRef.current.raf=requestAnimationFrame(step);
     };
     liveMarkerRef.current.raf=requestAnimationFrame(step);
   }
   function liveTap(){
-    if(!liveGame || liveGame.over) return;
-    if(liveGame.turn!==myLiveRole()) return; // not my turn
+    const gs=liveGame;
+    if(!myLiveActive(gs)) return; // not my action
     stopLiveMarker();
     const d=Math.abs(liveMarker-50);
     const result = d<=7 ? "perfect" : d<=18 ? "good" : "miss";
     setLiveLocked({result, at:liveMarker});
+    const me=myLiveRole();
     if(liveMatch.iAmHost){
-      hostResolveTap("host", result); // host resolves its own tap directly
+      hostResolveTap(me, result); // host resolves directly
     } else {
-      liveChannelRef.current.send({ type:"broadcast", event:"tap", payload:{ by:"guest", result } });
+      liveChannelRef.current.send({ type:"broadcast", event:"tap", payload:{ by:me, result } });
     }
   }
 
@@ -1466,13 +1493,13 @@ export default function App(){
     setScreen("home");
   }
 
-  // When it becomes MY attack turn in a live game, start my timing marker.
+  // When it's MY action (attack or defend) in a live game, start my timing marker.
   useEffect(()=>{
     if(!liveGame || liveGame.over){ stopLiveMarker(); return; }
-    if(liveGame.turn===myLiveRole()){ startLiveMarker(); }
+    if(myLiveActive(liveGame)){ startLiveMarker(); }
     else { stopLiveMarker(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[liveGame?.turn, liveGame?.round, liveGame?.over]);
+  },[liveGame?.attacker, liveGame?.phase, liveGame?.round, liveGame?.over]);
 
 
   function genJoinCode(){
@@ -2197,10 +2224,12 @@ export default function App(){
         const oppHp = gs ? (role==="host"?gs.hpGuest:gs.hpHost) : 100;
         const myWins = gs ? (role==="host"?gs.hostWins:gs.guestWins) : 0;
         const oppWins = gs ? (role==="host"?gs.guestWins:gs.hostWins) : 0;
-        const myTurn = gs && !gs.over && gs.turn===role;
+        const myActive = myLiveActive(gs);
+        const iAmAttacking = gs && !gs.over && gs.phase==="attack" && gs.attacker===role;
+        const iAmDefending = gs && !gs.over && gs.phase==="defend" && (gs.attacker!==role);
         const iWon = gs && gs.over && gs.winner===role;
         return (
-          <div style={Z.duelWrap} onClick={myTurn?liveTap:undefined}>
+          <div style={Z.duelWrap} onClick={myActive?liveTap:undefined}>
             <button style={Z.backBtn} onClick={(e)=>{e.stopPropagation();exitLiveMatch();}}>← Leave duel</button>
             <div style={Z.liveTag}>🔴 LIVE DUEL{gs?` · Round ${gs.round}`:""}</div>
 
@@ -2227,7 +2256,7 @@ export default function App(){
                 <WarriorArt warriorKey={warriorKey} tier={tierIndex} size={104}/>
                 <div style={{...Z.fLbl,color:warrior.accent}}>{profileName||"You"}</div>
               </div>
-              <div style={Z.vs}>{myTurn?"⚔":"VS"}</div>
+              <div style={Z.vs}>{myActive?"⚔":"VS"}</div>
               <div style={Z.fCol}>
                 <div style={{transform:"scaleX(-1)"}}><WarriorArt warriorKey={liveMatch.opponentLine} tier={0} size={104}/></div>
                 <div style={{...Z.fLbl,color:opp.accent}}>{liveMatch.opponentName}</div>
@@ -2247,18 +2276,24 @@ export default function App(){
               </div>
             ) : (
               <div style={{marginTop:4}}>
-                <div style={{...Z.duelLog,color:myTurn?warrior.accent:"#8B95A3"}}>{myTurn?"YOUR TURN — tap anywhere in the center!":`${liveMatch.opponentName}'s turn…`}</div>
-                {myTurn&&(
+                <div style={{...Z.duelLog,color:iAmAttacking?warrior.accent:iAmDefending?"#6A9EE8":"#8B95A3"}}>
+                  {iAmAttacking ? "⚔️ YOUR STRIKE — tap the center!"
+                   : iAmDefending ? "🛡️ INCOMING — tap to BLOCK!"
+                   : gs.phase==="attack" ? `${liveMatch.opponentName} is striking…`
+                   : `Blocking your strike…`}
+                </div>
+                {myActive&&(
                   <>
                     <div style={Z.timingTrack}>
                       <div style={{position:"absolute",top:0,bottom:0,left:"32%",width:"36%",background:"rgba(90,180,140,0.18)"}}/>
-                      <div style={{position:"absolute",top:0,bottom:0,left:"43%",width:"14%",background:"rgba(232,201,94,0.35)"}}/>
+                      <div style={{position:"absolute",top:0,bottom:0,left:"43%",width:"14%",background:iAmDefending?"rgba(106,158,232,0.4)":"rgba(232,201,94,0.35)"}}/>
                       <div style={{position:"absolute",top:0,bottom:0,left:"50%",width:2,background:"rgba(255,255,255,0.5)",transform:"translateX(-1px)"}}/>
                       <div style={{position:"absolute",top:-3,bottom:-3,left:`${liveLocked?liveLocked.at:liveMarker}%`,width:4,borderRadius:2,background:liveLocked?(liveLocked.result==="perfect"?"#E8C95E":liveLocked.result==="good"?"#5AB48C":"#B33A3A"):"#FFF",transform:"translateX(-2px)",boxShadow:"0 0 8px rgba(255,255,255,0.6)"}}/>
                     </div>
                     <div style={Z.timingHint}>TAP ANYWHERE</div>
                   </>
                 )}
+                {!myActive&&<div style={Z.liveStatusSub} >{gs.log}</div>}
               </div>
             )}
           </div>
