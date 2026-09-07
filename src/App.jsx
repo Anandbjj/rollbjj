@@ -961,6 +961,12 @@ export default function App(){
   // ─── Profile (name, belt, stripes) ───
   const [profileName,setProfileName]=useState(saved?.profileName ?? "");
   const [ownedPremium,setOwnedPremium]=useState(saved?.ownedPremium ?? []); // keys of purchased premium warriors
+  // ─── Clubs ───
+  const [club,setClub]=useState(null);            // { id, name, join_code } or null
+  const [clubBusy,setClubBusy]=useState(false);
+  const [clubError,setClubError]=useState("");
+  const [newClubName,setNewClubName]=useState("");
+  const [joinCode,setJoinCode]=useState("");
   const [belt,setBelt]=useState(saved?.belt ?? "white");
   const [stripes,setStripes]=useState(saved?.stripes ?? 0);
   const [now,setNow]=useState(new Date());
@@ -1159,6 +1165,79 @@ export default function App(){
   function goShop(){setScreen("shop");}
   function goBoard(){setScreen("board");}
   function goHistory(){setScreen("history");}
+  // ─── Clubs: load the user's club when logged in ───
+  useEffect(()=>{
+    if(!session){ setClub(null); return; }
+    let cancelled=false;
+    (async()=>{
+      try{
+        const { data, error } = await supabase
+          .from("club_members").select("club_id, clubs(id,name,join_code)")
+          .eq("user_id", session.user.id).maybeSingle();
+        if(cancelled) return;
+        if(error) throw error;
+        setClub(data?.clubs || null);
+      }catch(e){ console.error("club load failed", e); }
+    })();
+    return ()=>{cancelled=true;};
+  },[session]);
+
+  function genJoinCode(){
+    const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no confusing 0/O/1/I
+    let s=""; for(let i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+    return s;
+  }
+  async function createClub(){
+    setClubError("");
+    const name=newClubName.trim();
+    if(!name){ setClubError("Enter a club name."); return; }
+    if(!session){ setClubError("You must be logged in."); return; }
+    setClubBusy(true);
+    try{
+      const code=genJoinCode();
+      const { data: clubRow, error: e1 } = await supabase
+        .from("clubs").insert({ name, join_code: code, created_by: session.user.id })
+        .select().single();
+      if(e1) throw e1;
+      const { error: e2 } = await supabase
+        .from("club_members").upsert({ user_id: session.user.id, club_id: clubRow.id, display_name: profileName||null });
+      if(e2) throw e2;
+      setClub(clubRow);
+      setNewClubName("");
+    }catch(e){ setClubError(e.message||"Couldn't create club."); }
+    finally{ setClubBusy(false); }
+  }
+  async function joinClub(){
+    setClubError("");
+    const code=joinCode.trim().toUpperCase();
+    if(!code){ setClubError("Enter a join code."); return; }
+    if(!session){ setClubError("You must be logged in."); return; }
+    setClubBusy(true);
+    try{
+      const { data: clubRow, error: e1 } = await supabase
+        .from("clubs").select("id,name,join_code").eq("join_code", code).maybeSingle();
+      if(e1) throw e1;
+      if(!clubRow){ setClubError("No club found with that code."); setClubBusy(false); return; }
+      const { error: e2 } = await supabase
+        .from("club_members").upsert({ user_id: session.user.id, club_id: clubRow.id, display_name: profileName||null });
+      if(e2) throw e2;
+      setClub(clubRow);
+      setJoinCode("");
+    }catch(e){ setClubError(e.message||"Couldn't join club."); }
+    finally{ setClubBusy(false); }
+  }
+  async function leaveClub(){
+    if(!session||!club) return;
+    if(!window.confirm(`Leave ${club.name}?`)) return;
+    setClubBusy(true);
+    try{
+      await supabase.from("club_members").delete().eq("user_id", session.user.id);
+      setClub(null);
+    }catch(e){ setClubError(e.message||"Couldn't leave."); }
+    finally{ setClubBusy(false); }
+  }
+  function goClub(){ setScreen("club"); }
+
   function goMore(){setScreen("more");}
   function resetProgress(){
     if(!window.confirm("Reset everything? Your warrior, points, roster, and training log will be permanently wiped."))return;
@@ -1631,6 +1710,47 @@ export default function App(){
         </div>
       )}
 
+      {screen==="club"&&warrior&&(
+        <div style={Z.profileWrap}>
+          <button style={Z.backBtn} onClick={goMore}>← Back</button>
+          <h2 style={Z.profileTitle}>Club</h2>
+          {club ? (
+            <>
+              <div style={Z.clubCard}>
+                <div style={Z.clubName}>🏛️ {club.name}</div>
+                <div style={Z.clubCodeRow}>
+                  <span style={Z.clubCodeLabel}>Join code</span>
+                  <span style={Z.clubCode}>{club.join_code}</span>
+                </div>
+                <div style={Z.clubHint}>Share this code with your training partners so they can join your club.</div>
+              </div>
+              <button className="act" style={{...Z.secBtn,width:"100%",borderColor:"rgba(90,180,140,0.4)",color:"#5AB48C"}} onClick={goBoard}>View club leaderboard</button>
+              <button className="act" style={{...Z.secBtn,width:"100%",marginTop:10,borderColor:"rgba(179,58,58,0.4)",color:"#B33A3A"}} onClick={leaveClub} disabled={clubBusy}>Leave club</button>
+            </>
+          ) : (
+            <>
+              <p style={Z.profileSub}>Join your gym's club to see a real leaderboard with your training partners — or start one and invite them.</p>
+
+              <div style={Z.pfField}>
+                <div style={Z.pfLabel}>Join a club</div>
+                <input value={joinCode} onChange={(e)=>setJoinCode(e.target.value.toUpperCase())} placeholder="Enter join code (e.g. K7P2QX)" style={Z.pfInput} autoCapitalize="characters" maxLength={6}/>
+                <button className="act" style={{...Z.primaryBtn,marginTop:10,opacity:clubBusy?0.6:1}} onClick={joinClub} disabled={clubBusy}>{clubBusy?"…":"Join club"}</button>
+              </div>
+
+              <div style={Z.clubDivider}>or</div>
+
+              <div style={Z.pfField}>
+                <div style={Z.pfLabel}>Create a club</div>
+                <input value={newClubName} onChange={(e)=>setNewClubName(e.target.value)} placeholder="Club name (e.g. Indiana University BJJ)" style={Z.pfInput} maxLength={40}/>
+                <button className="act" style={{...Z.secBtn,width:"100%",marginTop:10,opacity:clubBusy?0.6:1}} onClick={createClub} disabled={clubBusy}>{clubBusy?"…":"Create club"}</button>
+              </div>
+
+              {clubError&&<div style={Z.authErr}>{clubError}</div>}
+            </>
+          )}
+        </div>
+      )}
+
       {screen==="profile"&&warrior&&(
         <div style={Z.profileWrap}>
           <button style={Z.backBtn} onClick={goMore}>← Back</button>
@@ -2033,6 +2153,11 @@ export default function App(){
             <button className="act" style={Z.moreItem} onClick={goProfile}>
               <span style={{...Z.moreItemIcon,color:beltOf(belt).color==="#E8E8E8"?"#B7BFC9":beltOf(belt).color}}>🥋</span>
               <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>{profileName||"Your Profile"}</div><div style={Z.moreItemSub}>{beltOf(belt).name} belt{stripes>0?` · ${stripes} stripe${stripes>1?"s":""}`:""}</div></div>
+              <span style={Z.moreChevron}>›</span>
+            </button>
+            <button className="act" style={Z.moreItem} onClick={goClub}>
+              <span style={{...Z.moreItemIcon,color:"#E8935A"}}>🏛️</span>
+              <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>{club?club.name:"Club"}</div><div style={Z.moreItemSub}>{club?`Code: ${club.join_code}`:"Create or join a club"}</div></div>
               <span style={Z.moreChevron}>›</span>
             </button>
             <button className="act" style={Z.moreItem} onClick={goBoard}>
@@ -2529,6 +2654,13 @@ const Z={
   beltStripe:{width:6,height:"70%",background:"#fff",borderRadius:1},
   beltPreviewLabel:{fontSize:12.5,color:"#B7BFC9",marginTop:8,fontWeight:600},
   profileSummary:{display:"flex",alignItems:"center",gap:14,background:"#1D232D",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"12px 14px",marginBottom:14},
+  clubCard:{background:"#1D232D",border:"1px solid rgba(232,147,90,0.3)",borderRadius:14,padding:"16px",marginBottom:16},
+  clubName:{fontSize:17,fontWeight:700,color:"#EDEFF2",marginBottom:12},
+  clubCodeRow:{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#12161C",borderRadius:10,padding:"10px 14px"},
+  clubCodeLabel:{fontSize:12,color:"#8B95A3"},
+  clubCode:{fontFamily:"'Bebas Neue', sans-serif",fontSize:24,letterSpacing:3,color:"#E8935A"},
+  clubHint:{fontSize:11.5,lineHeight:1.5,color:"#8B95A3",marginTop:10},
+  clubDivider:{textAlign:"center",fontSize:12,color:"#5D6673",margin:"6px 0"},
   profileSumName:{fontSize:16,fontWeight:700},
   profileSumSub:{fontSize:12,color:"#8B95A3",marginTop:2},
   schedAddBox:{background:"#181D26",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 14px 16px"},
