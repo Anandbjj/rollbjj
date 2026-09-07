@@ -1060,7 +1060,11 @@ export default function App(){
   }
   async function handleLogout(){
     await supabase.auth.signOut();
+    clearSave();          // wipe the device cache so it can't leak to the next account
+    resetToFresh();       // blank the in-memory state
     setSession(null);
+    setCloudLoaded(false);
+    setScreen("intro");
   }
 
   // Applies a saved data object to all the game state at once (used by cloud load).
@@ -1082,6 +1086,24 @@ export default function App(){
     if(d.warriorKey) setScreen("home");
   }
 
+  // Blanks all game state to a brand-new-player slate (used for fresh accounts & logout).
+  function resetToFresh(){
+    setWarriorKey(null);
+    setWarriorProgress({mongol:0,knight:0,viking:0,samurai:0,spartan:0});
+    setUnlockedWarriors([]);
+    setStreak(0);
+    setRecord({w:0,l:0});
+    setSessions([]);
+    setLastCompDateStr(null);
+    setSchedule(DEFAULT_SCHEDULE);
+    setLastClassLogStr(null);
+    setProfileName("");
+    setBelt("white");
+    setStripes(0);
+    setOwnedPremium([]);
+    setNewlyUnlocked(null);
+  }
+
   // ─── Cloud load: when a user logs in, pull their saved progress from Supabase ───
   const [cloudLoaded,setCloudLoaded]=useState(false);
   useEffect(()=>{
@@ -1093,14 +1115,18 @@ export default function App(){
           .from("profiles").select("data").eq("id", session.user.id).maybeSingle();
         if(cancelled) return;
         if(error) throw error;
-        if(data && data.data){
-          // Cloud has a save → use it (source of truth across devices).
+        if(data && data.data && data.data.warriorKey){
+          // This account has real cloud progress → load it (source of truth).
           applySave(data.data);
+        }else{
+          // Brand-new account (no cloud progress) → start FRESH.
+          // Critically, we do NOT inherit the device's local cache, which may
+          // belong to a different account that was logged in on this device.
+          clearSave();
+          resetToFresh();
+          setScreen("intro");
         }
-        // If no cloud row yet, we keep whatever local/current state there is and
-        // it'll get pushed up by the save effect below (creating their cloud row).
       }catch(e){
-        // On any error, fall back to local state silently — don't block the app.
         console.error("cloud load failed", e);
       }finally{
         if(!cancelled) setCloudLoaded(true);
@@ -1116,14 +1142,16 @@ export default function App(){
     return ()=>clearInterval(id);
   },[]);
 
-  // Persist progression to localStorage whenever any of it changes.
+  // Persist progression to localStorage (device cache) — but only once we're logged in
+  // AND the cloud data has loaded, so we never cache a stale/other account's state.
   useEffect(()=>{
+    if(session && !cloudLoaded) return; // wait for cloud before caching anything
     writeSave({
       warriorKey, warriorProgress, unlockedWarriors, streak,
       record, sessions, lastCompDateStr, schedule, lastClassLogStr,
       profileName, belt, stripes, ownedPremium,
     });
-  },[warriorKey,warriorProgress,unlockedWarriors,streak,record,sessions,lastCompDateStr,schedule,lastClassLogStr,profileName,belt,stripes,ownedPremium]);
+  },[session,cloudLoaded,warriorKey,warriorProgress,unlockedWarriors,streak,record,sessions,lastCompDateStr,schedule,lastClassLogStr,profileName,belt,stripes,ownedPremium]);
 
   // ─── Cloud save: push progress to Supabase (debounced) once logged in & loaded ───
   useEffect(()=>{
