@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { supabase } from "./supabaseClient";
 
 // ═══════════════════════════════════════════════════════════
 //  LOCAL SAVING
@@ -901,6 +902,14 @@ const GYM_MEMBERS = [
 export default function App(){
   // Load any saved progress once, synchronously, before first render.
   const saved = loadSave();
+  // ─── Auth (accounts) ───
+  const [session,setSession]=useState(null);       // the logged-in user's session, or null
+  const [authChecked,setAuthChecked]=useState(false); // have we finished the initial auth check?
+  const [authEmail,setAuthEmail]=useState("");
+  const [authPassword,setAuthPassword]=useState("");
+  const [authMode,setAuthMode]=useState("login");  // "login" | "signup"
+  const [authError,setAuthError]=useState("");
+  const [authBusy,setAuthBusy]=useState(false);
   const [screen,setScreen]=useState(saved?.warriorKey ? "home" : "intro");
   const [qIndex,setQIndex]=useState(0);
   const [tally,setTally]=useState({GW:0,PP:0,SC:0,SH:0,AN:0});
@@ -1002,6 +1011,44 @@ export default function App(){
       setOppKey(BASE_KEYS.find((k)=>k!==warriorKey)||"knight");
     }
   },[warriorKey,oppKey]);
+
+  // ─── Auth: check for an existing session on load, and listen for changes ───
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data})=>{
+      setSession(data.session);
+      setAuthChecked(true);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, sess)=>{
+      setSession(sess);
+    });
+    return ()=>listener.subscription.unsubscribe();
+  },[]);
+
+  async function handleAuth(){
+    setAuthError("");
+    const email=authEmail.trim();
+    if(!email||!authPassword){ setAuthError("Enter an email and password."); return; }
+    if(authPassword.length<6){ setAuthError("Password must be at least 6 characters."); return; }
+    setAuthBusy(true);
+    try{
+      if(authMode==="signup"){
+        const { error } = await supabase.auth.signUp({ email, password: authPassword });
+        if(error) throw error;
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password: authPassword });
+        if(error) throw error;
+      }
+      setAuthEmail(""); setAuthPassword("");
+    }catch(e){
+      setAuthError(e.message||"Something went wrong. Try again.");
+    }finally{
+      setAuthBusy(false);
+    }
+  }
+  async function handleLogout(){
+    await supabase.auth.signOut();
+    setSession(null);
+  }
 
   // Keep "now" fresh so the schedule status (upcoming/ongoing/done) updates on its own.
   useEffect(()=>{
@@ -1406,6 +1453,40 @@ export default function App(){
         input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
       `}</style>
       <div style={Z.phone}><div style={Z.notch}/><div style={Z.screen}>
+
+      {/* ─── AUTH GATE: must be logged in to use the app ─── */}
+      {!authChecked ? (
+        <div style={Z.authWrap}><div style={Z.authLoading}>Loading…</div></div>
+      ) : !session ? (
+        <div style={Z.authWrap}>
+          <div style={Z.authKicker}>Roll Card</div>
+          <h1 style={Z.authTitle}>{authMode==="signup"?"Create your account":"Welcome back"}</h1>
+          <p style={Z.authSub}>{authMode==="signup"?"Sign up to save your progress and duel your friends.":"Log in to pick up where you left off."}</p>
+          <input
+            type="email"
+            value={authEmail}
+            onChange={(e)=>setAuthEmail(e.target.value)}
+            placeholder="Email"
+            style={Z.authInput}
+            autoCapitalize="none"
+          />
+          <input
+            type="password"
+            value={authPassword}
+            onChange={(e)=>setAuthPassword(e.target.value)}
+            placeholder="Password (6+ characters)"
+            style={Z.authInput}
+            onKeyDown={(e)=>{if(e.key==="Enter")handleAuth();}}
+          />
+          {authError&&<div style={Z.authErr}>{authError}</div>}
+          <button className="act" style={{...Z.primaryBtn,opacity:authBusy?0.6:1}} onClick={handleAuth} disabled={authBusy}>
+            {authBusy?"Please wait…":(authMode==="signup"?"Sign up":"Log in")}
+          </button>
+          <button style={Z.authSwitch} onClick={()=>{setAuthMode(authMode==="signup"?"login":"signup");setAuthError("");}}>
+            {authMode==="signup"?"Already have an account? Log in":"New here? Create an account"}
+          </button>
+        </div>
+      ) : (<>
 
       {screen==="intro"&&(
         <div style={Z.introWrap}>
@@ -1913,6 +1994,11 @@ export default function App(){
               <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Reset Progress</div><div style={Z.moreItemSub}>Wipe everything and start over</div></div>
               <span style={Z.moreChevron}>›</span>
             </button>
+            <button className="act" style={Z.moreItem} onClick={handleLogout}>
+              <span style={{...Z.moreItemIcon,color:"#8B95A3"}}>⎋</span>
+              <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Log Out</div><div style={Z.moreItemSub}>{session?.user?.email||"Signed in"}</div></div>
+              <span style={Z.moreChevron}>›</span>
+            </button>
           </div>
           {navBar}
         </div>
@@ -2168,6 +2254,7 @@ export default function App(){
         );
       })()}
 
+      </>)}
       </div></div>
     </div>
   );
@@ -2175,6 +2262,14 @@ export default function App(){
 
 const Z={
   page:{minHeight:"100vh",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",background:"radial-gradient(circle at 50% 0%, #1A2029 0%, #0B0E13 65%)",padding:"24px 12px",fontFamily:"'Inter', sans-serif"},
+  authWrap:{height:"100%",display:"flex",flexDirection:"column",justifyContent:"center",padding:"40px 28px",gap:12},
+  authLoading:{textAlign:"center",color:"#8B95A3",fontSize:14},
+  authKicker:{fontSize:13,color:"#8B95A3",letterSpacing:0.2,textAlign:"center"},
+  authTitle:{fontFamily:"'Bebas Neue', sans-serif",fontSize:38,lineHeight:1.05,letterSpacing:0.5,margin:"0",color:"#EDEFF2",textAlign:"center"},
+  authSub:{fontSize:13.5,lineHeight:1.5,color:"#B7BFC9",textAlign:"center",margin:"0 0 8px"},
+  authInput:{width:"100%",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)",borderRadius:12,color:"#EDEFF2",fontSize:15,fontFamily:"'Inter',sans-serif",padding:"13px 15px",outline:"none",boxSizing:"border-box"},
+  authErr:{fontSize:12.5,color:"#E86A6A",textAlign:"center"},
+  authSwitch:{background:"none",border:"none",color:"#8B95A3",fontSize:13,cursor:"pointer",padding:"6px",marginTop:2},
   phone:{width:390,maxWidth:"100%",height:800,maxHeight:"92vh",background:"#05070A",borderRadius:44,padding:14,boxShadow:"0 30px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04)",position:"relative"},
   notch:{position:"absolute",top:14,left:"50%",transform:"translateX(-50%)",width:90,height:22,background:"#05070A",borderRadius:14,zIndex:2},
   screen:{width:"100%",height:"100%",background:"#14181F",borderRadius:32,overflow:"hidden",position:"relative",display:"flex",flexDirection:"column",color:"#EDEFF2"},
