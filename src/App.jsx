@@ -832,6 +832,8 @@ const SHOP_ITEMS=[
 // Quick-tap technique tags for logging what happened in a session.
 // Tapping is fast (no typing); an optional note box exists for anyone who wants to type more.
 const TAG_OPTIONS = ["Triangle","Armbar","Kimura","Guillotine","RNC","Ankle Lock","Americana","Sweep","Takedown","Guard Pass","Escape","Back Take"];
+// Session type: Gi, No-Gi, or Open Mat — captured on class logging.
+const GI_TYPES = ["Gi","No-Gi","Open Mat"];
 // Strength/conditioning session types (tracked separately — never award warrior points).
 const STRENGTH_TYPES = ["Lifting","Conditioning","Mobility","Cardio"];
 // Default minutes for a BJJ class breakdown. Pre-filled so logging stays one-tap;
@@ -948,6 +950,7 @@ export default function App(){
   const [draftNote,setDraftNote]=useState("");
   const [showNoteBox,setShowNoteBox]=useState(false);
   const [draftBreakdown,setDraftBreakdown]=useState(DEFAULT_BREAKDOWN);
+  const [draftGi,setDraftGi]=useState("Gi");
   // ─── Strength/conditioning logging (separate track — no warrior points) ───
   const [strengthModalOpen,setStrengthModalOpen]=useState(false);
   const [strengthType,setStrengthType]=useState("Lifting");
@@ -1714,7 +1717,7 @@ export default function App(){
     setSessions((s)=>[entry,...s]);
     // Only BJJ classes/comps get the optional technique-tag prompt.
     if(type==="class"||type==="competition"){
-      setDetailPrompt(id);setDraftTags([]);setDraftNote("");setShowNoteBox(false);setDraftBreakdown(DEFAULT_BREAKDOWN);
+      setDetailPrompt(id);setDraftTags([]);setDraftNote("");setShowNoteBox(false);setDraftBreakdown(DEFAULT_BREAKDOWN);setDraftGi("Gi");
     }
   }
   function logClass(){gain(1,"+1 point");setStreak((s)=>s+1);addSession(1,"class");setLastClassLogStr(new Date().toDateString());}
@@ -1801,8 +1804,8 @@ export default function App(){
     addSession(5,"competition",{eventName:name});
   }
   function toggleTag(tag){setDraftTags((t)=>t.includes(tag)?t.filter((x)=>x!==tag):[...t,tag]);}
-  function saveDetails(){setSessions((all)=>all.map((s)=>s.id===detailPrompt?{...s,tags:draftTags,note:draftNote,breakdown:s.type==="class"?draftBreakdown:undefined}:s));setDetailPrompt(null);}
-  function skipDetails(){setSessions((all)=>all.map((s)=>s.id===detailPrompt&&s.type==="class"?{...s,breakdown:DEFAULT_BREAKDOWN}:s));setDetailPrompt(null);}
+  function saveDetails(){setSessions((all)=>all.map((s)=>s.id===detailPrompt?{...s,tags:draftTags,note:draftNote,breakdown:s.type==="class"?draftBreakdown:undefined,gi:(s.type==="class"||s.type==="competition")?draftGi:undefined}:s));setDetailPrompt(null);}
+  function skipDetails(){setSessions((all)=>all.map((s)=>s.id===detailPrompt&&s.type==="class"?{...s,breakdown:DEFAULT_BREAKDOWN,gi:draftGi}:s));setDetailPrompt(null);}
   function tapWarrior(){if(anim)return;triggerAnim("attack",500);addPopup("⚔",warrior.accent);}
 
   // ─── Interactive duel: timing-bar engine ───
@@ -2684,6 +2687,9 @@ export default function App(){
         const strengthSessions=sessions.filter((s)=>s.type==="strength");
         const strengthCount=strengthSessions.length;
         const strengthMins=strengthSessions.reduce((a,s)=>a+(s.durationMin||0),0);
+        const giCount=sessions.filter((s)=>s.gi==="Gi").length;
+        const nogiCount=sessions.filter((s)=>s.gi==="No-Gi").length;
+        const openCount=sessions.filter((s)=>s.gi==="Open Mat").length;
         // Sessions in the last 7 days (all types)
         const weekAgo=Date.now()-7*24*60*60*1000;
         const thisWeek=sessions.filter((s)=>new Date(s.date).getTime()>=weekAgo).length;
@@ -2723,6 +2729,18 @@ export default function App(){
               <div style={Z.statCard}><div style={{...Z.statNum,color:"#C9A15A"}}>{compCount}</div><div style={Z.statLbl}>Competitions</div></div>
               <div style={Z.statCard}><div style={{...Z.statNum,color:"#8B9EE8"}}>{strengthCount}</div><div style={Z.statLbl}>Strength{strengthMins>0?` · ${strengthMins}m`:""}</div></div>
             </div>
+
+            {/* Gi / No-Gi / Open Mat split */}
+            {(giCount+nogiCount+openCount)>0&&(
+              <div style={Z.statsSection}>
+                <div style={Z.statsSectionTitle}>Gi vs No-Gi</div>
+                <div style={{display:"flex",gap:9}}>
+                  <div style={{...Z.statCard,flex:1}}><div style={{...Z.statNum,color:warrior.accent}}>{giCount}</div><div style={Z.statLbl}>Gi</div></div>
+                  <div style={{...Z.statCard,flex:1}}><div style={{...Z.statNum,color:"#6A9EE8"}}>{nogiCount}</div><div style={Z.statLbl}>No-Gi</div></div>
+                  <div style={{...Z.statCard,flex:1}}><div style={{...Z.statNum,color:"#5AB48C"}}>{openCount}</div><div style={Z.statLbl}>Open Mat</div></div>
+                </div>
+              </div>
+            )}
 
             {/* All-time mat time breakdown */}
             <div style={Z.statsSection}>
@@ -2947,7 +2965,7 @@ export default function App(){
                     {s.type==="strength" ? (
                       <span style={{...Z.historyType,color:"#6A9EE8"}}>💪 {s.strengthType||"Strength"}</span>
                     ) : (
-                      <span style={{...Z.historyType,color:s.type==="competition"?"#C9A15A":warrior.accent}}>{s.type==="competition"?"Competition":"Class"} · +{s.points}</span>
+                      <span style={{...Z.historyType,color:s.type==="competition"?"#C9A15A":warrior.accent}}>{s.gi?`${s.gi} · `:""}{s.type==="competition"?"Competition":"Class"} · +{s.points}</span>
                     )}
                   </div>
                   {s.type==="strength"&&s.durationMin&&(
@@ -3029,6 +3047,18 @@ export default function App(){
         <div style={Z.detailOverlay}>
           <div style={Z.detailSheet}>
             <div style={Z.detailTitle}>Add details? <span style={Z.detailOptional}>(optional)</span></div>
+
+            <div style={{marginBottom:14}}>
+              <div style={Z.pfLabel}>Training type</div>
+              <div style={{display:"flex",gap:7}}>
+                {GI_TYPES.map((g)=>(
+                  <button key={g} className="stp" onClick={()=>setDraftGi(g)}
+                    style={{...Z.giChip,...(draftGi===g?{background:warrior.accent,borderColor:warrior.accent,color:"#14181F"}:{})}}>
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {isClass&&(
               <div style={{marginBottom:14}}>
@@ -3200,6 +3230,7 @@ const Z={
   tagGrid:{display:"flex",flexWrap:"wrap",gap:7,marginBottom:10},
   tagChip:{padding:"7px 12px",borderRadius:18,fontSize:12.5,fontWeight:600,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
   durChip:{flex:1,padding:"9px 0",borderRadius:10,fontSize:13,fontWeight:700,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
+  giChip:{flex:1,padding:"10px 0",borderRadius:10,fontSize:13,fontWeight:700,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
   bdRow:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8},
   bdLabel:{fontSize:13,color:"#D5DAE1",fontWeight:600},
   bdStepper:{display:"flex",alignItems:"center",gap:8},
