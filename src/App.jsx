@@ -2097,7 +2097,7 @@ export default function App(){
     {key:"roster",label:"Roster",icon:"🛡️", go:goRoster},
     {key:"more",  label:"More",  icon:"☰",  go:()=>setScreen("more")},
   ];
-  const activeNav = screen==="home"?"home":screen==="duel"?"duel":screen==="stats"?"stats":screen==="roster"?"roster":["more","board","history","schedule","shop"].includes(screen)?"more":null;
+  const activeNav = screen==="home"?"home":screen==="duel"?"duel":screen==="stats"?"stats":screen==="roster"?"roster":["more","board","history","schedule"].includes(screen)?"more":null;
   const navBar=(
     <div style={Z.navBar}>
       {NAV_ITEMS.map((n)=>(
@@ -2940,11 +2940,6 @@ export default function App(){
               <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Schedule</div><div style={Z.moreItemSub}>Class times & add to calendar</div></div>
               <span style={Z.moreChevron}>›</span>
             </button>
-            <button className="act" style={Z.moreItem} onClick={goShop}>
-              <span style={{...Z.moreItemIcon,color:"#8B5FBF"}}>✨</span>
-              <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Shop</div><div style={Z.moreItemSub}>Cosmetics — no pay-to-win</div></div>
-              <span style={Z.moreChevron}>›</span>
-            </button>
             <button className="act" style={Z.moreItem} onClick={handleLogout}>
               <span style={{...Z.moreItemIcon,color:"#8B95A3"}}>⎋</span>
               <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Log Out</div><div style={Z.moreItemSub}>{session?.user?.email||"Signed in"}</div></div>
@@ -3052,15 +3047,6 @@ export default function App(){
             })}
           </div>
           {navBar}
-        </div>
-      )}
-
-      {screen==="shop"&&warrior&&(
-        <div style={Z.shopWrap}>
-          <button style={Z.backBtn} onClick={goMore}>← Back</button>
-          <h2 style={Z.shopTitle}>Shop</h2>
-          <p style={Z.shopSub}>Cosmetics only — no stat boosts, no pay-to-win</p>
-          <div style={Z.shopGrid}>{SHOP_ITEMS.map((item)=>(<div key={item.id} style={Z.shopCard}><div style={{...Z.shopDot,background:item.color}}/><div style={{flex:1}}><div style={Z.shopName}>{item.name}</div><div style={Z.shopDesc}>{item.desc}</div></div><div style={{textAlign:"right"}}>{item.owned?<div style={Z.shopOwned}>Owned</div>:<button className="act" style={{...Z.shopBuyBtn,background:item.color}}>{item.price}</button>}</div></div>))}</div>
         </div>
       )}
 
