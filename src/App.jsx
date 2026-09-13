@@ -2129,6 +2129,8 @@ export default function App(){
         @keyframes defeatKneel{0%{transform:translateY(0) rotate(0) scale(1)}100%{transform:translateY(16px) rotate(8deg) scale(0.88)}}
         @keyframes glowBurst{0%{opacity:0.9;transform:scale(0.4)}100%{opacity:0;transform:scale(2.2)}}
         @keyframes poseEnter{0%{opacity:0;transform:scale(0.7) translateY(10px)}100%{opacity:1;transform:scale(1) translateY(0)}}
+        @keyframes loadPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.06);opacity:0.85}}
+        @keyframes loadBounce{0%,80%,100%{transform:translateY(0);opacity:0.4}40%{transform:translateY(-7px);opacity:1}}
         button{font-family:'Inter',sans-serif;cursor:pointer;border:none}
         .act:active{transform:scale(.97)}.stp:active{transform:scale(.9)}
         .navbtn{cursor:pointer;transition:opacity 0.15s}.navbtn:active{opacity:0.6}
@@ -2138,7 +2140,21 @@ export default function App(){
 
       {/* ─── AUTH GATE: must be logged in to use the app ─── */}
       {!authChecked ? (
-        <div style={Z.authWrap}><div style={Z.authLoading}>Loading…</div></div>
+        <div style={Z.loadWrap}>
+          <div style={Z.loadShield}>
+            <svg viewBox="0 0 100 110" width="90" height="99">
+              <polygon points="50,6 92,20 92,60 50,104 8,60 8,20" fill="#C9A15A"/>
+              <polygon points="50,16 82,26 82,57 50,92 18,57 18,26" fill="#14181F"/>
+              <text x="50" y="62" textAnchor="middle" fontSize="46" fontWeight="bold" fill="#C9A15A" fontFamily="'Bebas Neue',sans-serif">R</text>
+            </svg>
+          </div>
+          <div style={Z.loadTitle}>ROLL CARD</div>
+          <div style={Z.loadDots}>
+            <span style={{...Z.loadDot,animationDelay:"0s"}}/>
+            <span style={{...Z.loadDot,animationDelay:"0.15s"}}/>
+            <span style={{...Z.loadDot,animationDelay:"0.3s"}}/>
+          </div>
+        </div>
       ) : !session ? (
         <div style={Z.authWrap}>
           <div style={Z.authKicker}>Roll Card</div>
@@ -3224,6 +3240,11 @@ const Z={
     backgroundImage:"linear-gradient(180deg, rgba(11,14,19,0.82) 0%, rgba(11,14,19,0.6) 40%, rgba(11,14,19,0.92) 100%), url('https://res.cloudinary.com/qt4ptjgy/image/upload/f_auto,q_auto/v1789263053/xbsdy.jpg')",
     backgroundSize:"cover", backgroundPosition:"center"},
   authLoading:{textAlign:"center",color:"#8B95A3",fontSize:14},
+  loadWrap:{height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,background:"radial-gradient(circle at 50% 40%, #1A2029 0%, #0B0E13 70%)"},
+  loadShield:{animation:"loadPulse 1.6s ease-in-out infinite"},
+  loadTitle:{fontFamily:"'Bebas Neue', sans-serif",fontSize:30,letterSpacing:3,color:"#EDEFF2"},
+  loadDots:{display:"flex",gap:7,marginTop:4},
+  loadDot:{width:8,height:8,borderRadius:"50%",background:"#C9A15A",display:"inline-block",animation:"loadBounce 1.2s ease-in-out infinite"},
   authKicker:{fontSize:13,color:"#8B95A3",letterSpacing:0.2,textAlign:"center"},
   authTitle:{fontFamily:"'Bebas Neue', sans-serif",fontSize:38,lineHeight:1.05,letterSpacing:0.5,margin:"0",color:"#EDEFF2",textAlign:"center"},
   authSub:{fontSize:13.5,lineHeight:1.5,color:"#B7BFC9",textAlign:"center",margin:"0 0 8px"},
