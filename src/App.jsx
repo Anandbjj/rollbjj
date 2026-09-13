@@ -3282,7 +3282,7 @@ const Z={
   secBtn:{padding:"12px 16px",background:"transparent",border:"1px solid rgba(255,255,255,0.18)",color:"#EDEFF2",borderRadius:14,fontSize:13,fontWeight:600},
   popLayer:{position:"absolute",top:160,left:0,right:0,display:"flex",justifyContent:"center",pointerEvents:"none"},
   popup:{position:"absolute",fontFamily:"'Bebas Neue', sans-serif",fontSize:20,animation:"floatUp 1.3s ease-out forwards"},
-  evoOverlay:{height:"100%",background:"rgba(5,7,10,0.88)",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"},
+  evoOverlay:{position:"absolute",inset:0,zIndex:50,background:"rgba(5,7,10,0.95)",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"},
   evoCard:{textAlign:"center"},evoKicker:{fontSize:13,color:"#C9A15A",fontWeight:600,marginBottom:6},
   evoTo:{fontFamily:"'Bebas Neue', sans-serif",fontSize:36,letterSpacing:0.5},
   duelWrap:{height:"100%",display:"flex",flexDirection:"column",padding:"36px 18px 22px"},
