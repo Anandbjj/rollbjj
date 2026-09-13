@@ -882,7 +882,7 @@ This is placeholder text. Generate your real terms at termly.io and paste them h
     title: "Cookie Policy",
     body: `[PASTE YOUR COOKIE POLICY FROM TERMLY HERE]
 
-This is placeholder text. Roll Card uses local browser storage to keep you logged in and cache your progress — these are necessary for the app to function. Generate your full cookie policy at termly.io and paste it here.`,
+This is placeholder text. RollWarriors uses local browser storage to keep you logged in and cache your progress — these are necessary for the app to function. Generate your full cookie policy at termly.io and paste it here.`,
   },
   refund: {
     title: "Refund Policy",
@@ -1821,7 +1821,7 @@ export default function App(){
     };
     const stamp=(()=>{const n=new Date();return `${n.getUTCFullYear()}${pad(n.getUTCMonth()+1)}${pad(n.getUTCDate())}T${pad(n.getUTCHours())}${pad(n.getUTCMinutes())}${pad(n.getUTCSeconds())}Z`;})();
     let lines=[
-      "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Roll Card//BJJ Schedule//EN","CALSCALE:GREGORIAN",
+      "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//RollWarriors//BJJ Schedule//EN","CALSCALE:GREGORIAN",
     ];
     schedule.forEach((s,i)=>{
       const base=nextDateFor(s.day);
@@ -1833,7 +1833,7 @@ export default function App(){
         `DTEND:${fmt(base,s.end)}`,
         `RRULE:FREQ=WEEKLY;BYDAY=${ICS_DAY[s.day]}`,
         "SUMMARY:BJJ Class",
-        "DESCRIPTION:Training session — log it in Roll Card after class!",
+        "DESCRIPTION:Training session — log it in RollWarriors after class!",
         "BEGIN:VALARM","TRIGGER:-PT1H","ACTION:DISPLAY","DESCRIPTION:BJJ Class in 1 hour","END:VALARM",
         "END:VEVENT"
       );
@@ -2148,7 +2148,7 @@ export default function App(){
               <text x="50" y="62" textAnchor="middle" fontSize="46" fontWeight="bold" fill="#C9A15A" fontFamily="'Bebas Neue',sans-serif">R</text>
             </svg>
           </div>
-          <div style={Z.loadTitle}>ROLL CARD</div>
+          <div style={Z.loadTitle}>ROLLWARRIORS</div>
           <div style={Z.loadDots}>
             <span style={{...Z.loadDot,animationDelay:"0s"}}/>
             <span style={{...Z.loadDot,animationDelay:"0.15s"}}/>
@@ -2157,7 +2157,7 @@ export default function App(){
         </div>
       ) : !session ? (
         <div style={Z.authWrap}>
-          <div style={Z.authKicker}>Roll Card</div>
+          <div style={Z.authKicker}>RollWarriors</div>
           <h1 style={Z.authTitle}>{authMode==="signup"?"Create your account":"Welcome back"}</h1>
           <p style={Z.authSub}>{authMode==="signup"?"Sign up to save your progress and duel your friends.":"Log in to pick up where you left off."}</p>
           <input
@@ -2188,7 +2188,7 @@ export default function App(){
 
       {screen==="intro"&&(
         <div style={Z.introWrap}>
-          <div><div style={Z.kicker}>Roll Card</div><h1 style={Z.introTitle}>What's your game?</h1><p style={Z.introBody}>Six questions. One warrior. Level them up every time you show up to class — then duel your friends.</p></div>
+          <div><div style={Z.kicker}>RollWarriors</div><h1 style={Z.introTitle}>What's your game?</h1><p style={Z.introBody}>Six questions. One warrior. Level them up every time you show up to class — then duel your friends.</p></div>
           <div><button className="act" style={Z.primaryBtn} onClick={startQuiz}>Start the roll</button><p style={Z.fn}>Takes about a minute</p></div>
         </div>
       )}
