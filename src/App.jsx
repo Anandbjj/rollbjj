@@ -834,6 +834,63 @@ const SHOP_ITEMS=[
 const TAG_OPTIONS = ["Triangle","Armbar","Kimura","Guillotine","RNC","Ankle Lock","Americana","Sweep","Takedown","Guard Pass","Escape","Back Take"];
 // Session type: Gi, No-Gi, or Open Mat — captured on class logging.
 const GI_TYPES = ["Gi","No-Gi","Open Mat"];
+
+// ⭐ When true, premium warriors are FREE to unlock (launch promo). Flip to false
+//    once real Stripe payments are wired up, and they'll charge their real price.
+const LAUNCH_FREE = true;
+
+// Simple keyword-based training tips (no API, free & instant). Each entry: keywords → tip.
+// Framed as things to explore — always defers to the user's real coach.
+const TIP_LIBRARY = [
+  { keys:["side control","sidecontrol","side-control"], tip:"Escaping side control: focus on framing (forearm across their hip/neck), get on your side, and shrimp to recover guard or come to your knees. Don't stay flat." },
+  { keys:["mount","mounted"], tip:"Escaping mount: trap an arm and same-side leg, then bridge hard over that shoulder to roll them. Or shrimp to recover half guard. Protect your neck the whole time." },
+  { keys:["back","rear","rnc","choke from behind"], tip:"Defending the back: hand-fight to stop the choke, tuck your chin, and slide your hips down to the mat on the side of their choking arm to start escaping." },
+  { keys:["guard pass","passed","passing"], tip:"Retaining guard: keep your knees and frames between you and them, move your hips (don't let them flatten you), and reguard early before they consolidate." },
+  { keys:["takedown","takedowns","wrestling","shot"], tip:"Takedowns: work your grips/level change and penetration step in drilling. A strong sprawl and re-shot beats forcing one entry. Chain attempts." },
+  { keys:["triangle"], tip:"Triangle: control posture, cut the angle (don't just squeeze straight on), and lock it high on the neck. Angle is everything." },
+  { keys:["armbar","arm bar"], tip:"Armbar: pinch your knees, control the wrist with the thumb up, and hip up slowly. Losing it usually means loose knees or a stalled hip." },
+  { keys:["guillotine"], tip:"Guillotine: get the chin, close the space, and use your whole body — pull guard or elevate to finish rather than just arm strength." },
+  { keys:["gas","tired","cardio","gassed","conditioning"], tip:"Gassing out: it's often tension, not fitness — breathe steadily and relax on defense. Positional rounds and consistent mat time build the right kind of gas tank." },
+  { keys:["submission","tap","tapped","caught"], tip:"Getting caught a lot: note WHICH submission and from where — patterns reveal the leak. Defense starts one step earlier than you think." },
+  { keys:["sweep","swept"], tip:"Sweeps: off-balance them first (kuzushi) — a sweep is just finishing a direction they're already falling. Connect grips to hips." },
+  { keys:["escape","escaping","stuck","pinned"], tip:"Escapes: the earlier the better — fight to get to your side and create frames before they fully settle their weight. Recover an inch at a time." },
+];
+function findTip(note){
+  if(!note) return null;
+  const low=note.toLowerCase();
+  const hit=TIP_LIBRARY.find((t)=>t.keys.some((k)=>low.includes(k)));
+  return hit ? hit.tip : null;
+}
+
+// ─── Legal content ───
+// PLACEHOLDER TEXT — replace each `body` with the real policy from Termly (termly.io).
+// Paste the generated text between the backticks. Keep it as plain paragraphs.
+const LEGAL_CONTENT = {
+  privacy: {
+    title: "Privacy Policy",
+    body: `[PASTE YOUR PRIVACY POLICY FROM TERMLY HERE]
+
+This is placeholder text. Generate your real privacy policy at termly.io using your app's details (accounts via email, data stored on Supabase, no analytics or ads currently, based in Indiana USA), then paste it here.`,
+  },
+  terms: {
+    title: "Terms & Conditions",
+    body: `[PASTE YOUR TERMS & CONDITIONS FROM TERMLY HERE]
+
+This is placeholder text. Generate your real terms at termly.io and paste them here.`,
+  },
+  cookies: {
+    title: "Cookie Policy",
+    body: `[PASTE YOUR COOKIE POLICY FROM TERMLY HERE]
+
+This is placeholder text. Roll Card uses local browser storage to keep you logged in and cache your progress — these are necessary for the app to function. Generate your full cookie policy at termly.io and paste it here.`,
+  },
+  refund: {
+    title: "Refund Policy",
+    body: `[PASTE YOUR REFUND POLICY HERE — WHEN REAL PAYMENTS ARE LIVE]
+
+This is placeholder text. Premium warrior purchases are not yet processed through real payments. Once you add real payments (e.g. Stripe), generate and paste a refund policy here.`,
+  },
+};
 // Strength/conditioning session types (tracked separately — never award warrior points).
 const STRENGTH_TYPES = ["Lifting","Conditioning","Mobility","Cardio"];
 // Default minutes for a BJJ class breakdown. Pre-filled so logging stays one-tap;
@@ -952,6 +1009,11 @@ export default function App(){
   const [draftBreakdown,setDraftBreakdown]=useState(DEFAULT_BREAKDOWN);
   const [draftGi,setDraftGi]=useState("Gi");
   const [pendingPoints,setPendingPoints]=useState(0); // points to award when the detail sheet is saved/skipped
+  const [tipPopup,setTipPopup]=useState(null); // a training tip shown after saving a note
+  // ─── Legal pages + cookie consent ───
+  const [legalPage,setLegalPage]=useState(null); // "privacy" | "terms" | "cookies" | "refund" | null
+  const [cookieOk,setCookieOk]=useState(()=>{ try{ return window.localStorage.getItem("rollcard_cookie_ok")==="1"; }catch(e){ return true; } });
+  function acceptCookies(){ try{ window.localStorage.setItem("rollcard_cookie_ok","1"); }catch(e){} setCookieOk(true); }
   // ─── Strength/conditioning logging (separate track — no warrior points) ───
   const [strengthModalOpen,setStrengthModalOpen]=useState(false);
   const [strengthType,setStrengthType]=useState("Lifting");
@@ -1204,7 +1266,9 @@ export default function App(){
     // Mock purchase — no real payment yet. Unlocks the premium warrior as "owned & maxed."
     if(ownedPremium.includes(key))return;
     const w=WARRIORS[key];
-    if(!window.confirm(`Unlock ${w.name} for ${w.price}?\n\n(Payments aren't live yet — this unlocks it for free so you can try it. Real checkout comes later.)`))return;
+    if(!window.confirm(LAUNCH_FREE
+      ? `Unlock ${w.name} — FREE during launch! 🎉\n\nGrab it now while premium warriors are free.`
+      : `Unlock ${w.name} for ${w.price}?`))return;
     setOwnedPremium((p)=>[...p,key]);
     // Premium warriors are maxed by their `premium` flag (tierIndex forces max tier) —
     // we deliberately do NOT give them points, so they never affect unlock milestones or stats.
@@ -1812,6 +1876,8 @@ export default function App(){
     setSessions((all)=>all.map((s)=>s.id===detailPrompt?{...s,tags:draftTags,note:draftNote,breakdown:s.type==="class"?draftBreakdown:undefined,gi:(s.type==="class"||s.type==="competition")?draftGi:undefined}:s));
     setDetailPrompt(null);
     awardPending();
+    const tip=findTip(draftNote);
+    if(tip) setTipPopup(tip);
   }
   function skipDetails(){
     setSessions((all)=>all.map((s)=>s.id===detailPrompt&&s.type==="class"?{...s,breakdown:DEFAULT_BREAKDOWN,gi:draftGi}:s));
@@ -2387,6 +2453,39 @@ export default function App(){
         </div></div>
       )}
 
+      {tipPopup&&warrior&&(
+        <div style={Z.detailOverlay}>
+          <div style={Z.detailSheet}>
+            <div style={Z.detailTitle}>💡 Training Tip</div>
+            <p style={{fontSize:13.5,lineHeight:1.6,color:"#D5DAE1",margin:"4px 0 6px"}}>{tipPopup}</p>
+            <p style={{fontSize:11,color:"#5D6673",fontStyle:"italic",margin:"0 0 4px"}}>A idea to explore on the mat — always check with your coach.</p>
+            <button className="act" style={{...Z.saveBtn,background:warrior.accent,width:"100%",marginTop:10}} onClick={()=>setTipPopup(null)}>Got it</button>
+          </div>
+        </div>
+      )}
+
+      {/* Legal page overlay (privacy / terms / cookies / refund) */}
+      {legalPage&&(
+        <div style={Z.legalOverlay}>
+          <div style={Z.legalSheet}>
+            <button style={Z.backBtn} onClick={()=>setLegalPage(null)}>← Back</button>
+            <h2 style={Z.legalTitle}>{LEGAL_CONTENT[legalPage].title}</h2>
+            <div style={Z.legalBody}>{LEGAL_CONTENT[legalPage].body}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Cookie consent banner */}
+      {!cookieOk&&(
+        <div style={Z.cookieBar}>
+          <div style={Z.cookieText}>
+            We use necessary local storage to keep you logged in and save your progress. See our{" "}
+            <span style={Z.cookieLink} onClick={()=>setLegalPage("cookies")}>Cookie Policy</span>.
+          </div>
+          <button className="act" style={Z.cookieBtn} onClick={acceptCookies}>Got it</button>
+        </div>
+      )}
+
       {incomingChallenge&&session&&(
         <div style={Z.detailOverlay}>
           <div style={Z.detailSheet}>
@@ -2852,6 +2951,15 @@ export default function App(){
               <span style={Z.moreChevron}>›</span>
             </button>
           </div>
+          <div style={Z.legalFooter}>
+            <span style={Z.legalFooterLink} onClick={()=>setLegalPage("privacy")}>Privacy</span>
+            <span style={Z.legalFooterDot}>·</span>
+            <span style={Z.legalFooterLink} onClick={()=>setLegalPage("terms")}>Terms</span>
+            <span style={Z.legalFooterDot}>·</span>
+            <span style={Z.legalFooterLink} onClick={()=>setLegalPage("cookies")}>Cookies</span>
+            <span style={Z.legalFooterDot}>·</span>
+            <span style={Z.legalFooterLink} onClick={()=>setLegalPage("refund")}>Refunds</span>
+          </div>
           {navBar}
         </div>
       )}
@@ -2927,13 +3035,13 @@ export default function App(){
                     {owned?(
                       <div style={Z.rosterMeta}>{isPremium?"Maxed · unique playstyle":`${w.titles[tIdx]} · ${prog} pts`}</div>
                     ):isPremium?(
-                      <div style={Z.rosterMeta}>{w.tagline}</div>
+                      <div style={Z.rosterMeta}>{w.tagline}{LAUNCH_FREE?" · 🎉 Free during launch!":""}</div>
                     ):(
                       <div style={Z.rosterLocked}>🔒 {reqLabelFor(w.key, unlockedWarriors[0])||"Locked"}</div>
                     )}
                   </div>
                   {isPremium&&!owned&&(
-                    <button className="act" style={{...Z.rosterBuyBtn}} onClick={()=>purchasePremium(w.key)}>{w.price}</button>
+                    <button className="act" style={{...Z.rosterBuyBtn}} onClick={()=>purchasePremium(w.key)}>{LAUNCH_FREE?"FREE":w.price}</button>
                   )}
                   {owned&&!isActive&&(
                     <button className="act" style={{...Z.rosterSwitchBtn,borderColor:w.accent,color:w.accent}} onClick={()=>setActiveWarrior(w.key)}>Switch</button>
@@ -3126,7 +3234,9 @@ export default function App(){
 
 const Z={
   page:{minHeight:"100vh",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",background:"radial-gradient(circle at 50% 0%, #1A2029 0%, #0B0E13 65%)",padding:"24px 12px",fontFamily:"'Inter', sans-serif"},
-  authWrap:{height:"100%",display:"flex",flexDirection:"column",justifyContent:"center",padding:"40px 28px",gap:12},
+  authWrap:{height:"100%",display:"flex",flexDirection:"column",justifyContent:"center",padding:"40px 28px",gap:12,position:"relative",
+    backgroundImage:"linear-gradient(180deg, rgba(11,14,19,0.82) 0%, rgba(11,14,19,0.6) 40%, rgba(11,14,19,0.92) 100%), url('https://res.cloudinary.com/qt4ptjgy/image/upload/f_auto,q_auto/v1789263053/xbsdy.jpg')",
+    backgroundSize:"cover", backgroundPosition:"center"},
   authLoading:{textAlign:"center",color:"#8B95A3",fontSize:14},
   authKicker:{fontSize:13,color:"#8B95A3",letterSpacing:0.2,textAlign:"center"},
   authTitle:{fontFamily:"'Bebas Neue', sans-serif",fontSize:38,lineHeight:1.05,letterSpacing:0.5,margin:"0",color:"#EDEFF2",textAlign:"center"},
@@ -3238,6 +3348,17 @@ const Z={
   tagChip:{padding:"7px 12px",borderRadius:18,fontSize:12.5,fontWeight:600,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
   durChip:{flex:1,padding:"9px 0",borderRadius:10,fontSize:13,fontWeight:700,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
   giChip:{flex:1,padding:"10px 0",borderRadius:10,fontSize:13,fontWeight:700,color:"#D5DAE1",background:"#242A34",border:"1px solid rgba(255,255,255,0.1)"},
+  legalOverlay:{position:"absolute",inset:0,background:"#14181F",zIndex:40,display:"flex",flexDirection:"column"},
+  legalSheet:{height:"100%",display:"flex",flexDirection:"column",padding:"40px 22px 24px",overflowY:"auto"},
+  legalTitle:{fontFamily:"'Bebas Neue', sans-serif",fontSize:30,margin:"8px 0 14px"},
+  legalBody:{fontSize:13,lineHeight:1.7,color:"#B7BFC9",whiteSpace:"pre-wrap"},
+  cookieBar:{position:"absolute",bottom:0,left:0,right:0,background:"rgba(10,13,18,0.97)",backdropFilter:"blur(8px)",borderTop:"1px solid rgba(255,255,255,0.1)",padding:"14px 16px",display:"flex",alignItems:"center",gap:12,zIndex:45},
+  cookieText:{flex:1,fontSize:11.5,lineHeight:1.5,color:"#B7BFC9"},
+  cookieLink:{color:"#C9A15A",textDecoration:"underline",cursor:"pointer"},
+  cookieBtn:{background:"#C9A15A",border:"none",color:"#14181F",borderRadius:10,padding:"9px 16px",fontSize:13,fontWeight:700,flexShrink:0,cursor:"pointer"},
+  legalFooter:{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"14px 0 4px",flexWrap:"wrap"},
+  legalFooterLink:{fontSize:11.5,color:"#5D6673",cursor:"pointer",textDecoration:"underline"},
+  legalFooterDot:{fontSize:11.5,color:"#3A414D"},
   bdRow:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8},
   bdLabel:{fontSize:13,color:"#D5DAE1",fontWeight:600},
   bdStepper:{display:"flex",alignItems:"center",gap:8},
