@@ -951,6 +951,7 @@ export default function App(){
   const [showNoteBox,setShowNoteBox]=useState(false);
   const [draftBreakdown,setDraftBreakdown]=useState(DEFAULT_BREAKDOWN);
   const [draftGi,setDraftGi]=useState("Gi");
+  const [pendingPoints,setPendingPoints]=useState(0); // points to award when the detail sheet is saved/skipped
   // ─── Strength/conditioning logging (separate track — no warrior points) ───
   const [strengthModalOpen,setStrengthModalOpen]=useState(false);
   const [strengthType,setStrengthType]=useState("Lifting");
@@ -1715,12 +1716,13 @@ export default function App(){
     const id=idRef.current++;
     const entry={id,date:new Date().toISOString(),type,points,tags:[],note:"",eventName:"",...extra};
     setSessions((s)=>[entry,...s]);
-    // Only BJJ classes/comps get the optional technique-tag prompt.
+    // Only BJJ classes/comps get the optional detail prompt. Points are awarded when it's saved/skipped.
     if(type==="class"||type==="competition"){
+      setPendingPoints(points);
       setDetailPrompt(id);setDraftTags([]);setDraftNote("");setShowNoteBox(false);setDraftBreakdown(DEFAULT_BREAKDOWN);setDraftGi("Gi");
     }
   }
-  function logClass(){gain(1,"+1 point");setStreak((s)=>s+1);addSession(1,"class");setLastClassLogStr(new Date().toDateString());}
+  function logClass(){ addSession(1,"class"); setLastClassLogStr(new Date().toDateString()); } // point awarded on save
   function openStrengthModal(){setStrengthType("Lifting");setStrengthDuration(45);setStrengthModalOpen(true);}
   function confirmStrength(){
     // Strength sessions are tracked but award NO warrior points — keeps rank BJJ-only.
@@ -1799,13 +1801,23 @@ export default function App(){
     if(!name)return;
     setLastCompDateStr(new Date().toISOString());
     setCompModalOpen(false);
-    gain(5,"+5 points");
-    setStreak((s)=>s+1);
-    addSession(5,"competition",{eventName:name});
+    addSession(5,"competition",{eventName:name}); // points awarded on save
   }
   function toggleTag(tag){setDraftTags((t)=>t.includes(tag)?t.filter((x)=>x!==tag):[...t,tag]);}
-  function saveDetails(){setSessions((all)=>all.map((s)=>s.id===detailPrompt?{...s,tags:draftTags,note:draftNote,breakdown:s.type==="class"?draftBreakdown:undefined,gi:(s.type==="class"||s.type==="competition")?draftGi:undefined}:s));setDetailPrompt(null);}
-  function skipDetails(){setSessions((all)=>all.map((s)=>s.id===detailPrompt&&s.type==="class"?{...s,breakdown:DEFAULT_BREAKDOWN,gi:draftGi}:s));setDetailPrompt(null);}
+  function awardPending(){
+    if(pendingPoints>0){ gain(pendingPoints, `+${pendingPoints} point${pendingPoints>1?"s":""}`); setStreak((s)=>s+1); }
+    setPendingPoints(0);
+  }
+  function saveDetails(){
+    setSessions((all)=>all.map((s)=>s.id===detailPrompt?{...s,tags:draftTags,note:draftNote,breakdown:s.type==="class"?draftBreakdown:undefined,gi:(s.type==="class"||s.type==="competition")?draftGi:undefined}:s));
+    setDetailPrompt(null);
+    awardPending();
+  }
+  function skipDetails(){
+    setSessions((all)=>all.map((s)=>s.id===detailPrompt&&s.type==="class"?{...s,breakdown:DEFAULT_BREAKDOWN,gi:draftGi}:s));
+    setDetailPrompt(null);
+    awardPending();
+  }
   function tapWarrior(){if(anim)return;triggerAnim("attack",500);addPopup("⚔",warrior.accent);}
 
   // ─── Interactive duel: timing-bar engine ───
@@ -2834,11 +2846,6 @@ export default function App(){
               <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Shop</div><div style={Z.moreItemSub}>Cosmetics — no pay-to-win</div></div>
               <span style={Z.moreChevron}>›</span>
             </button>
-            <button className="act" style={Z.moreItem} onClick={resetProgress}>
-              <span style={{...Z.moreItemIcon,color:"#B33A3A"}}>↺</span>
-              <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Reset Progress</div><div style={Z.moreItemSub}>Wipe everything and start over</div></div>
-              <span style={Z.moreChevron}>›</span>
-            </button>
             <button className="act" style={Z.moreItem} onClick={handleLogout}>
               <span style={{...Z.moreItemIcon,color:"#8B95A3"}}>⎋</span>
               <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Log Out</div><div style={Z.moreItemSub}>{session?.user?.email||"Signed in"}</div></div>
@@ -3278,7 +3285,7 @@ const Z={
   navItem:{flex:1,background:"none",border:"none",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,paddingTop:4},
   navIcon:{fontSize:19,lineHeight:1},
   navLabel:{fontSize:10,fontWeight:600},
-  moreWrap:{height:"100%",display:"flex",flexDirection:"column",padding:"44px 20px 74px"},
+  moreWrap:{height:"100%",display:"flex",flexDirection:"column",padding:"44px 20px 84px",overflowY:"auto"},
   moreTitle:{fontFamily:"'Bebas Neue', sans-serif",fontSize:32,margin:"0 0 16px"},
   moreList:{display:"flex",flexDirection:"column",gap:10},
   moreItem:{display:"flex",alignItems:"center",gap:14,background:"#1D232D",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 16px",cursor:"pointer"},
