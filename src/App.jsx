@@ -1495,11 +1495,23 @@ export default function App(){
   }
   function startLiveMarker(){
     stopLiveMarker(); setLiveLocked(null);
-    liveMarkerRef.current={dir:1,raf:null,active:true};
-    const step=()=>{
+    // Time-based sweep: the marker completes a full 0→100→0 cycle in a fixed real duration,
+    // so it moves at the SAME speed on every phone regardless of frame rate (fixes desync).
+    const SPEED = 55; // percent per second (one 0→100 sweep ≈ 1.8s)
+    liveMarkerRef.current={dir:1,raf:null,active:true,last:null};
+    const step=(now)=>{
       if(!liveMarkerRef.current.active) return;
-      setLiveMarker((p)=>{ let np=p+liveMarkerRef.current.dir*2.6; if(np>=100){np=100;liveMarkerRef.current.dir=-1;} if(np<=0){np=0;liveMarkerRef.current.dir=1;} return np; });
-      liveMarkerRef.current.raf=requestAnimationFrame(step);
+      const r=liveMarkerRef.current;
+      if(r.last==null) r.last=now;
+      const dt=(now-r.last)/1000; // seconds since last frame
+      r.last=now;
+      setLiveMarker((p)=>{
+        let np=p + r.dir*SPEED*dt;
+        if(np>=100){ np=100; r.dir=-1; }
+        if(np<=0){ np=0; r.dir=1; }
+        return np;
+      });
+      r.raf=requestAnimationFrame(step);
     };
     liveMarkerRef.current.raf=requestAnimationFrame(step);
   }
@@ -1855,16 +1867,23 @@ export default function App(){
   }
   function startMarker(speed){
     stopMarker();
-    markerRef.current={dir:1,raf:null,active:true};
-    const step=()=>{
+    // Convert the old per-frame speed to per-second (~60fps baseline) so it runs
+    // at the same real speed on any device regardless of frame rate.
+    const perSec=speed*60;
+    markerRef.current={dir:1,raf:null,active:true,last:null};
+    const step=(now)=>{
       if(!markerRef.current.active) return;
+      const r=markerRef.current;
+      if(r.last==null) r.last=now;
+      const dt=(now-r.last)/1000;
+      r.last=now;
       setMarkerPos((p)=>{
-        let np=p+markerRef.current.dir*speed;
-        if(np>=100){np=100;markerRef.current.dir=-1;}
-        if(np<=0){np=0;markerRef.current.dir=1;}
+        let np=p+r.dir*perSec*dt;
+        if(np>=100){np=100;r.dir=-1;}
+        if(np<=0){np=0;r.dir=1;}
         return np;
       });
-      markerRef.current.raf=requestAnimationFrame(step);
+      r.raf=requestAnimationFrame(step);
     };
     markerRef.current.raf=requestAnimationFrame(step);
   }
