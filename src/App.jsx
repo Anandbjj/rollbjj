@@ -2135,8 +2135,14 @@ export default function App(){
         .act:active{transform:scale(.97)}.stp:active{transform:scale(.9)}
         .navbtn{cursor:pointer;transition:opacity 0.15s}.navbtn:active{opacity:0.6}
         input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+        /* On real phones (narrow screens), fill the whole screen like a native app — no phone-in-phone frame. */
+        @media (max-width: 500px){
+          .rw-phone{ width:100% !important; max-width:100% !important; height:100vh !important; max-height:100vh !important; border-radius:0 !important; padding:0 !important; box-shadow:none !important; }
+          .rw-notch{ display:none !important; }
+          .rw-phone > div:last-child{ border-radius:0 !important; }
+        }
       `}</style>
-      <div style={Z.phone}><div style={Z.notch}/><div style={Z.screen}>
+      <div className="rw-phone" style={Z.phone}><div className="rw-notch" style={Z.notch}/><div style={Z.screen}>
 
       {/* ─── AUTH GATE: must be logged in to use the app ─── */}
       {!authChecked ? (
@@ -3235,7 +3241,7 @@ export default function App(){
 }
 
 const Z={
-  page:{minHeight:"100vh",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",background:"radial-gradient(circle at 50% 0%, #1A2029 0%, #0B0E13 65%)",padding:"24px 12px",fontFamily:"'Inter', sans-serif"},
+  page:{minHeight:"100vh",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",background:"radial-gradient(circle at 50% 0%, #1A2029 0%, #0B0E13 65%)",fontFamily:"'Inter', sans-serif"},
   authWrap:{height:"100%",display:"flex",flexDirection:"column",justifyContent:"center",padding:"40px 28px",gap:12,position:"relative",
     backgroundImage:"linear-gradient(180deg, rgba(11,14,19,0.82) 0%, rgba(11,14,19,0.6) 40%, rgba(11,14,19,0.92) 100%), url('https://res.cloudinary.com/qt4ptjgy/image/upload/f_auto,q_auto/v1789263053/xbsdy.jpg')",
     backgroundSize:"cover", backgroundPosition:"center"},
