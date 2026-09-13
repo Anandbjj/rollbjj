@@ -968,12 +968,19 @@ export default function App(){
   const [newClubName,setNewClubName]=useState("");
   const [joinCode,setJoinCode]=useState("");
   const [boardMembers,setBoardMembers]=useState(null); // fetched clubmates for leaderboard, or null while loading
+  // ─── Friends (by code) ───
+  const [myFriendCode,setMyFriendCode]=useState(null);
+  const [friends,setFriends]=useState([]);        // [{friend_id, friend_name}]
+  const [addFriendInput,setAddFriendInput]=useState("");
+  const [friendMsg,setFriendMsg]=useState("");
+  const [friendBusy,setFriendBusy]=useState(false);
   // ─── Realtime duels (6a: presence + challenge) ───
   const [onlineMembers,setOnlineMembers]=useState([]);   // [{userId, name, line}] currently online in club
   const [incomingChallenge,setIncomingChallenge]=useState(null); // {fromId, fromName} someone challenging you
   const [outgoingChallenge,setOutgoingChallenge]=useState(null); // {toId, toName} you're waiting on
   const [challengeMsg,setChallengeMsg]=useState("");     // small status line
   const clubChannelRef=useRef(null);                     // the realtime channel object
+  const personalChannelRef=useRef(null);                 // personal channel for cross-club (friend) challenges
   // ─── Live duel (6b: shared room) ───
   const [liveMatch,setLiveMatch]=useState(null); // { matchId, opponentId, opponentName, opponentLine, iAmHost }
   const liveChannelRef=useRef(null);              // dedicated realtime channel for the active match
@@ -1262,6 +1269,29 @@ export default function App(){
     return ()=>{cancelled=true;};
   },[session]);
 
+  // ─── Realtime: a PERSONAL channel so anyone (incl. friends in other clubs) can reach you ───
+  useEffect(()=>{
+    if(!session) return;
+    const myId=session.user.id;
+    const pch=supabase.channel(`user-${myId}`);
+    pch.on("broadcast", { event:"challenge" }, ({payload})=>{
+      setIncomingChallenge({ fromId:payload.fromId, fromName:payload.fromName, matchId:payload.matchId, fromLine:payload.fromLine });
+    });
+    pch.on("broadcast", { event:"challenge_response" }, ({payload})=>{
+      if(payload.accepted){
+        setOutgoingChallenge(null);
+        enterLiveMatch({ matchId:payload.matchId, opponentId:payload.fromId, opponentName:payload.fromName, opponentLine:payload.fromLine, iAmHost:true });
+      } else {
+        setChallengeMsg(`${payload.fromName} declined.`); setOutgoingChallenge(null);
+        setTimeout(()=>setChallengeMsg(""),3000);
+      }
+    });
+    pch.subscribe();
+    personalChannelRef.current=pch;
+    return ()=>{ supabase.removeChannel(pch); personalChannelRef.current=null; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[session]);
+
   // ─── Realtime: join the club channel for presence + challenges ───
   // Runs app-wide whenever you're logged in and in a club — so you show online
   // and can be challenged from ANY screen, not just the duel page.
@@ -1330,11 +1360,17 @@ export default function App(){
     setOutgoingChallenge(null);
   }
   function respondChallenge(accepted){
-    if(!clubChannelRef.current||!incomingChallenge||!session) return;
+    if(!incomingChallenge||!session) return;
     const myName=profileName || (session.user.email||"Fighter").split("@")[0];
-    clubChannelRef.current.send({ type:"broadcast", event:"challenge_response", payload:{ fromId:session.user.id, fromName:myName, fromLine:warriorKey||"mongol", toId:incomingChallenge.fromId, accepted, matchId:incomingChallenge.matchId } });
+    // Respond via the challenger's PERSONAL channel (works whether they're a clubmate or a friend).
+    const rch=supabase.channel(`user-${incomingChallenge.fromId}`);
+    rch.subscribe((status)=>{
+      if(status==="SUBSCRIBED"){
+        rch.send({ type:"broadcast", event:"challenge_response", payload:{ fromId:session.user.id, fromName:myName, fromLine:warriorKey||"mongol", accepted, matchId:incomingChallenge.matchId } });
+        setTimeout(()=>supabase.removeChannel(rch), 1000);
+      }
+    });
     if(accepted){
-      // I accepted → enter the shared match room. Accepter is NOT host.
       enterLiveMatch({ matchId:incomingChallenge.matchId, opponentId:incomingChallenge.fromId, opponentName:incomingChallenge.fromName, opponentLine:incomingChallenge.fromLine, iAmHost:false });
     }
     setIncomingChallenge(null);
@@ -1501,6 +1537,87 @@ export default function App(){
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[liveGame?.attacker, liveGame?.phase, liveGame?.round, liveGame?.over]);
 
+
+  // ─── Friends: on login, ensure a friend code exists and load the friends list ───
+  useEffect(()=>{
+    if(!session){ setFriends([]); setMyFriendCode(null); return; }
+    let cancelled=false;
+    (async()=>{
+      try{
+        // Get or create my friend code
+        const { data: prof } = await supabase.from("profiles").select("friend_code").eq("id", session.user.id).maybeSingle();
+        let code = prof?.friend_code;
+        if(!code){
+          code = genFriendCode();
+          await supabase.from("profiles").update({ friend_code: code }).eq("id", session.user.id);
+        }
+        if(!cancelled) setMyFriendCode(code);
+        // Load friends
+        const { data: fr } = await supabase.from("friends").select("friend_id, friend_name").eq("user_id", session.user.id);
+        if(!cancelled) setFriends(fr||[]);
+      }catch(e){ console.error("friends load failed", e); }
+    })();
+    return ()=>{cancelled=true;};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[session]);
+
+  function genFriendCode(){
+    const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let s=""; for(let i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+    return s;
+  }
+  async function addFriend(){
+    setFriendMsg("");
+    const code=addFriendInput.trim().toUpperCase();
+    if(!code){ setFriendMsg("Enter a friend code."); return; }
+    if(code===myFriendCode){ setFriendMsg("That's your own code!"); return; }
+    if(!session) return;
+    setFriendBusy(true);
+    try{
+      // Look up who owns that code (returns only id + name)
+      const { data: found, error } = await supabase.rpc("find_by_friend_code", { code });
+      if(error) throw error;
+      const person = found && found[0];
+      if(!person){ setFriendMsg("No one found with that code."); setFriendBusy(false); return; }
+      if(friends.some((f)=>f.friend_id===person.id)){ setFriendMsg("Already friends!"); setFriendBusy(false); return; }
+      const myName = profileName || (session.user.email||"Fighter").split("@")[0];
+      // Add both directions so both people see each other as friends
+      await supabase.from("friends").insert({ user_id: session.user.id, friend_id: person.id, friend_name: person.name });
+      await supabase.from("friends").insert({ user_id: person.id, friend_id: session.user.id, friend_name: myName });
+      setFriends((f)=>[...f, { friend_id: person.id, friend_name: person.name }]);
+      setAddFriendInput("");
+      setFriendMsg(`Added ${person.name}!`);
+      setTimeout(()=>setFriendMsg(""),2500);
+    }catch(e){ setFriendMsg(e.message||"Couldn't add friend."); }
+    finally{ setFriendBusy(false); }
+  }
+  async function removeFriend(friendId){
+    if(!session) return;
+    if(!window.confirm("Remove this friend?")) return;
+    try{
+      await supabase.from("friends").delete().eq("user_id", session.user.id).eq("friend_id", friendId);
+      await supabase.from("friends").delete().eq("user_id", friendId).eq("friend_id", session.user.id);
+      setFriends((f)=>f.filter((x)=>x.friend_id!==friendId));
+    }catch(e){ console.error("remove friend failed", e); }
+  }
+  function goFriends(){ setScreen("friends"); }
+
+  // Challenge a friend directly via their personal channel (works across clubs).
+  function challengeFriend(friendId, friendName){
+    if(!session) return;
+    const myName=profileName || (session.user.email||"Fighter").split("@")[0];
+    const matchId=`${session.user.id.slice(0,8)}-${Date.now()}`;
+    const ch=supabase.channel(`user-${friendId}`);
+    ch.subscribe((status)=>{
+      if(status==="SUBSCRIBED"){
+        ch.send({ type:"broadcast", event:"challenge", payload:{ fromId:session.user.id, fromName:myName, fromLine:warriorKey||"mongol", matchId } });
+        setTimeout(()=>supabase.removeChannel(ch), 1000);
+      }
+    });
+    setOutgoingChallenge({ toId:friendId, toName:friendName, matchId });
+    setChallengeMsg(`Challenge sent to ${friendName}…`);
+    setTimeout(()=>setChallengeMsg(""),3000);
+  }
 
   function genJoinCode(){
     const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no confusing 0/O/1/I
@@ -2027,6 +2144,49 @@ export default function App(){
           </div>
 
           <button className="act" style={{...Z.primaryBtn,background:warrior.accent,marginTop:"auto"}} onClick={goHome}>Enter the app</button>
+        </div>
+      )}
+
+      {screen==="friends"&&warrior&&(
+        <div style={Z.profileWrap}>
+          <button style={Z.backBtn} onClick={goMore}>← Back</button>
+          <h2 style={Z.profileTitle}>Friends</h2>
+
+          {/* Your friend code to share */}
+          <div style={Z.clubCard}>
+            <div style={Z.clubCodeRow}>
+              <span style={Z.clubCodeLabel}>Your friend code</span>
+              <span style={Z.clubCode}>{myFriendCode||"…"}</span>
+            </div>
+            <div style={Z.clubHint}>Share this with friends at other gyms so they can add and duel you.</div>
+          </div>
+
+          {/* Add a friend */}
+          <div style={Z.pfField}>
+            <div style={Z.pfLabel}>Add a friend by code</div>
+            <input value={addFriendInput} onChange={(e)=>setAddFriendInput(e.target.value.toUpperCase())} placeholder="Enter friend code" style={Z.pfInput} maxLength={6} autoCapitalize="characters"/>
+            <button className="act" style={{...Z.primaryBtn,marginTop:10,opacity:friendBusy?0.6:1}} onClick={addFriend} disabled={friendBusy}>{friendBusy?"…":"Add friend"}</button>
+            {friendMsg&&<div style={{...Z.authErr,color:friendMsg.startsWith("Added")?"#5AB48C":"#E86A6A"}}>{friendMsg}</div>}
+          </div>
+
+          {/* Friends list */}
+          <div style={Z.pfLabel}>Your friends ({friends.length})</div>
+          {friends.length===0 ? (
+            <div style={Z.boardEmpty}>No friends yet. Share your code above to connect with training partners anywhere.</div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {friends.map((f)=>(
+                <div key={f.friend_id} style={Z.friendRow}>
+                  <span style={Z.friendName}>{f.friend_name||"Fighter"}</span>
+                  <div style={{display:"flex",gap:6}}>
+                    <button className="stp" style={Z.friendDuelBtn} onClick={()=>challengeFriend(f.friend_id,f.friend_name)} disabled={!!outgoingChallenge}>{outgoingChallenge&&outgoingChallenge.toId===f.friend_id?"Sent…":"Duel"}</button>
+                    <button className="stp" style={Z.friendRemoveBtn} onClick={()=>removeFriend(f.friend_id)}>✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {challengeMsg&&<div style={{...Z.challengeMsg,marginTop:12}}>{challengeMsg}</div>}
         </div>
       )}
 
@@ -2612,6 +2772,11 @@ export default function App(){
               <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>{club?club.name:"Club"}</div><div style={Z.moreItemSub}>{club?`Code: ${club.join_code}`:"Create or join a club"}</div></div>
               <span style={Z.moreChevron}>›</span>
             </button>
+            <button className="act" style={Z.moreItem} onClick={goFriends}>
+              <span style={{...Z.moreItemIcon,color:"#6A9EE8"}}>👥</span>
+              <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Friends</div><div style={Z.moreItemSub}>{friends.length>0?`${friends.length} friend${friends.length>1?"s":""} · duel across gyms`:"Add friends by code"}</div></div>
+              <span style={Z.moreChevron}>›</span>
+            </button>
             <button className="act" style={Z.moreItem} onClick={goBoard}>
               <span style={{...Z.moreItemIcon,color:"#5AB48C"}}>🏆</span>
               <div style={{flex:1,textAlign:"left"}}><div style={Z.moreItemName}>Leaderboard</div><div style={Z.moreItemSub}>See where you rank at your gym</div></div>
@@ -3113,6 +3278,10 @@ const Z={
   clubCode:{fontFamily:"'Bebas Neue', sans-serif",fontSize:24,letterSpacing:3,color:"#E8935A"},
   clubHint:{fontSize:11.5,lineHeight:1.5,color:"#8B95A3",marginTop:10},
   clubDivider:{textAlign:"center",fontSize:12,color:"#5D6673",margin:"6px 0"},
+  friendRow:{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#1D232D",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,padding:"11px 13px"},
+  friendName:{fontSize:14,fontWeight:600,color:"#EDEFF2"},
+  friendDuelBtn:{background:"#6A9EE8",border:"none",color:"#14181F",borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:700},
+  friendRemoveBtn:{background:"transparent",border:"1px solid rgba(255,255,255,0.15)",color:"#8B95A3",borderRadius:8,padding:"7px 10px",fontSize:12,fontWeight:700},
   profileSumName:{fontSize:16,fontWeight:700},
   profileSumSub:{fontSize:12,color:"#8B95A3",marginTop:2},
   schedAddBox:{background:"#181D26",border:"1px solid rgba(255,255,255,0.08)",borderRadius:14,padding:"14px 14px 16px"},
