@@ -1010,6 +1010,7 @@ export default function App(){
   const [draftGi,setDraftGi]=useState("Gi");
   const [pendingPoints,setPendingPoints]=useState(0); // points to award when the detail sheet is saved/skipped
   const [tipPopup,setTipPopup]=useState(null); // a training tip shown after saving a note
+  const [reminder,setReminder]=useState(null);  // an in-app "your warrior misses you" nudge shown on open
   // ─── Legal pages + cookie consent ───
   const [legalPage,setLegalPage]=useState(null); // "privacy" | "terms" | "cookies" | "refund" | null
   const [cookieOk,setCookieOk]=useState(()=>{ try{ return window.localStorage.getItem("rollcard_cookie_ok")==="1"; }catch(e){ return true; } });
@@ -1218,6 +1219,37 @@ export default function App(){
     return ()=>{cancelled=true;};
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[session]);
+
+  // ─── In-app reminder ("your warrior misses you") — shown once when you open the app ───
+  const reminderShownRef=useRef(false);
+  useEffect(()=>{
+    if(reminderShownRef.current) return;
+    if(!warriorKey || !warrior) return;
+    if(screen!=="home") return; // only nudge once you're on the home screen
+    reminderShownRef.current=true;
+    // Find the most recent training session date
+    const lastSession = sessions.length ? sessions.reduce((a,s)=> new Date(s.date)>new Date(a.date)?s:a) : null;
+    if(!lastSession){
+      // Brand-new — no sessions yet
+      setTimeout(()=>setReminder({
+        title:"Ready to train?",
+        body:`Your ${warrior.titles[tierIndex]} is waiting for its first session. Log a class to start leveling up!`,
+      }),700);
+      return;
+    }
+    const days=Math.floor((Date.now()-new Date(lastSession.date).getTime())/(1000*60*60*24));
+    let msg=null;
+    if(days>=7){
+      msg={ title:"Your warrior misses you 🥋", body:`It's been ${days} days since your last session. Your ${warrior.titles[tierIndex]} is getting rusty — get back on the mat!` };
+    } else if(days>=3){
+      msg={ title:"Don't lose momentum", body:`${days} days off the mat. Log a class today to keep your ${warrior.name} sharp.` };
+    } else if(days>=1 && streak>0){
+      msg={ title:"Keep your streak alive 🔥", body:`You're on a ${streak}-week streak. Train today to keep it going!` };
+    }
+    // (0 days = trained today, no nag)
+    if(msg) setTimeout(()=>setReminder(msg),700);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[warriorKey,screen]);
 
   // Keep "now" fresh so the schedule status (upcoming/ongoing/done) updates on its own.
   useEffect(()=>{
@@ -2473,6 +2505,17 @@ export default function App(){
           <div style={{margin:"16px 0",animation:"celebrate 0.9s ease-out"}}><WarriorArt warriorKey={warriorKey} tier={tierIndex} scale={1} size={180}/></div>
           <div style={{...Z.evoTo,color:warrior.accent}}>{warrior.titles[tierIndex]}</div>
         </div></div>
+      )}
+
+      {reminder&&warrior&&(
+        <div style={Z.detailOverlay}>
+          <div style={{...Z.detailSheet,textAlign:"center"}}>
+            <div style={{textAlign:"center",margin:"4px 0 10px"}}><WarriorArt warriorKey={warriorKey} tier={tierIndex} size={90}/></div>
+            <div style={{...Z.detailTitle,textAlign:"center"}}>{reminder.title}</div>
+            <p style={{fontSize:13.5,lineHeight:1.6,color:"#D5DAE1",margin:"4px 0 8px"}}>{reminder.body}</p>
+            <button className="act" style={{...Z.saveBtn,background:warrior.accent,width:"100%",marginTop:8}} onClick={()=>setReminder(null)}>Let's train</button>
+          </div>
+        </div>
       )}
 
       {tipPopup&&warrior&&(
