@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RollWarriors — 3D Test</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { height:100%; background:#0B0E13; overflow:hidden; font-family:sans-serif; }
+    #info {
+      position:fixed; top:0; left:0; right:0; z-index:10; text-align:center;
+      color:#C9A15A; padding:14px; font-size:14px; font-weight:700; letter-spacing:1px;
+      background:linear-gradient(180deg, rgba(11,14,19,0.9), transparent);
+      pointer-events:none;
+    }
+    #hint {
+      position:fixed; bottom:0; left:0; right:0; z-index:10; text-align:center;
+      color:#8B95A3; padding:14px; font-size:12px;
+      background:linear-gradient(0deg, rgba(11,14,19,0.9), transparent);
+      pointer-events:none;
+    }
+    #status { position:fixed; top:50%; left:0; right:0; text-align:center; color:#8B95A3; font-size:14px; }
+    canvas { display:block; }
+  </style>
+</head>
+<body>
+  <div id="info">ROLLWARRIORS · 3D TEST</div>
+  <div id="status">Loading 3D…</div>
+  <div id="hint">Drag to rotate · scroll/pinch to zoom</div>
+
+  <!-- Three.js + loaders + controls from a CDN (no install needed) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    // ─── The model to load. SWAP THIS URL for your warrior's .glb when you have it. ───
+    // For now it's a free sample model so you can see 3D working today.
+    const MODEL_URL = "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/models/gltf/Soldier.glb";
+
+    const statusEl = document.getElementById("status");
+
+    // Scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0B0E13);
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.set(0, 1.4, 4);
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // Lighting (warm gold key light to match RollWarriors vibe)
+    const key = new THREE.DirectionalLight(0xffe9c0, 2.2);
+    key.position.set(3, 5, 4);
+    key.castShadow = true;
+    scene.add(key);
+    const fill = new THREE.DirectionalLight(0x88aaff, 0.8);
+    fill.position.set(-4, 2, -3);
+    scene.add(fill);
+    scene.add(new THREE.AmbientLight(0x404860, 1.2));
+
+    // A dark "mat" floor
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(3, 48),
+      new THREE.MeshStandardMaterial({ color:0x14181F, roughness:0.9 })
+    );
+    floor.rotation.x = -Math.PI/2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+    // gold ring on the mat
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(2.7, 2.85, 64),
+      new THREE.MeshBasicMaterial({ color:0xC9A15A, side:THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI/2;
+    ring.position.y = 0.01;
+    scene.add(ring);
+
+    // Controls (drag to orbit)
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 1, 0);
+    controls.minDistance = 2;
+    controls.maxDistance = 8;
+
+    // Load the model
+    let mixer = null;
+    const loader = new GLTFLoader();
+    loader.load(
+      MODEL_URL,
+      (gltf) => {
+        const model = gltf.scene;
+        model.traverse((o)=>{ if(o.isMesh){ o.castShadow = true; } });
+        scene.add(model);
+
+        // Auto-frame: center + scale the model nicely regardless of its size
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.x += (model.position.x - center.x);
+        model.position.z += (model.position.z - center.z);
+        model.position.y += (model.position.y - box.min.y); // feet on floor
+        const targetHeight = 1.8;
+        const scale = targetHeight / (size.y || 1);
+        model.scale.setScalar(scale);
+        controls.target.set(0, targetHeight*0.55, 0);
+
+        // Play an animation if the model has one (the sample Soldier does)
+        if (gltf.animations && gltf.animations.length) {
+          mixer = new THREE.AnimationMixer(model);
+          // pick an idle-ish clip if present, else the first
+          const clip = gltf.animations.find(a=>/idle/i.test(a.name)) || gltf.animations[0];
+          mixer.clipAction(clip).play();
+        }
+
+        statusEl.style.display = "none";
+      },
+      (xhr) => {
+        if (xhr.total) statusEl.textContent = `Loading 3D… ${Math.round((xhr.loaded/xhr.total)*100)}%`;
+      },
+      (err) => {
+        console.error(err);
+        statusEl.textContent = "Couldn't load the model. Check the MODEL_URL.";
+      }
+    );
+
+    // Resize
+    window.addEventListener("resize", ()=>{
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Render loop
+    const clock = new THREE.Clock();
+    function animate(){
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      if (mixer) mixer.update(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
