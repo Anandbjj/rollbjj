@@ -78,17 +78,19 @@ const THROWS = {
 // ─── Stages: each warrior's home turf ───
 const cld = u => u.replace("/upload/", "/upload/f_auto,q_auto,w_1600/");
 const STAGES = [
-  { key:"mongol",  name:"ENDLESS STEPPE",  owner:"MONGOL",  bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233315/IMG_4774.jpg"),
+  { key:"mongol",  name:"ENDLESS STEPPE",  owner:"MONGOL",  bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1790984865/mongolian_background.jpg"),
     main:{ x:210, y:500, w:860, h:70 }, plats:[ { x:300, y:380, w:160, h:12 }, { x:820, y:380, w:160, h:12 } ] },
-  { key:"knight",  name:"CASTLE KEEP",     owner:"KNIGHT",  bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233315/IMG_4778.jpg"),
+  { key:"knight",  name:"CASTLE KEEP",     owner:"KNIGHT",  bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1790984864/knight_background.jpg"),
     main:{ x:260, y:500, w:760, h:70 }, plats:[ { x:370, y:360, w:170, h:12 }, { x:740, y:360, w:170, h:12 }, { x:555, y:230, w:170, h:12 } ] },
-  { key:"viking",  name:"FJORD LONGSHIP",  owner:"VIKING",  bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233316/IMG_4777.jpg"),
+  { key:"viking",  name:"FJORD LONGSHIP",  owner:"VIKING",  bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1790984864/viking_background.jpg"),
     main:{ x:320, y:500, w:640, h:70 }, plats:[ { x:150, y:400, w:130, h:12 }, { x:1000, y:400, w:130, h:12 }, { x:560, y:300, w:160, h:12, move:{ range:220, speed:0.9 } } ] },
-  { key:"samurai", name:"MOUNTAIN TEMPLE", owner:"SAMURAI", bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233315/IMG_4775.jpg"),
+  { key:"samurai", name:"MOUNTAIN TEMPLE", owner:"SAMURAI", bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1790984864/japanese_background.jpg"),
     main:{ x:290, y:500, w:700, h:70 }, plats:[ { x:330, y:390, w:150, h:12 }, { x:565, y:300, w:150, h:12 }, { x:800, y:210, w:150, h:12 } ] },
-  { key:"spartan", name:"HOT GATES",       owner:"SPARTAN", bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233316/IMG_4776_1.jpg"),
+  { key:"spartan", name:"HOT GATES",       owner:"SPARTAN", bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1790984864/spartan_s_background.jpg"),
     main:{ x:330, y:500, w:620, h:70 }, plats:[ { x:565, y:330, w:150, h:12 } ] },
 ];
+// Background darkening per stage: [top, middle, bottom], 0 = untouched, 1 = black. Tune after seeing it live.
+const DIM = { mongol:[0.08, 0.18, 0.6], knight:[0.08, 0.18, 0.6], viking:[0.08, 0.18, 0.6], samurai:[0.08, 0.18, 0.6], spartan:[0.08, 0.18, 0.6] };
 let STAGE, MAIN, PLATS;
 function loadStage(st){
   STAGE = st;
@@ -669,7 +671,8 @@ function drawBackground(){
   if ((state === "playing" || state === "over") && img && img.complete && img.naturalWidth){
     drawCover(img, -40 + bgShift, -40, W + 80, H + 80);
     const o = ctx.createLinearGradient(0, 0, 0, H);           // darken so fighters stay readable
-    o.addColorStop(0, "rgba(11,14,19,0.35)"); o.addColorStop(0.6, "rgba(11,14,19,0.5)"); o.addColorStop(1, "rgba(11,14,19,0.85)");
+    const d = DIM[STAGE.key] || [0.35, 0.5, 0.85];
+    o.addColorStop(0, `rgba(11,14,19,${d[0]})`); o.addColorStop(0.6, `rgba(11,14,19,${d[1]})`); o.addColorStop(1, `rgba(11,14,19,${d[2]})`);
     ctx.fillStyle = o; ctx.fillRect(-50, -50, W + 100, H + 100);
     return;
   }
@@ -864,7 +867,7 @@ function drawAmbient(front){
 }
 function drawVignette(){
   const g = ctx.createRadialGradient(W/2, H/2, H * 0.35, W/2, H/2, H * 0.95);
-  g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,0.5)");
+  g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,0.35)");
   ctx.fillStyle = g; ctx.fillRect(-50, -50, W + 100, H + 100);
 }
 function swordAngle(f){
@@ -1013,7 +1016,7 @@ function centerText(t, y, size, color, weight = "bold"){
 function drawMenu(){
   drawBackground();
   centerText("ROLLWARRIORS", 190, 64, "#C9A15A");
-  centerText("BRAWL · GAMEPLAY PROTOTYPE v4", 228, 18, "#8B95A3");
+  centerText("BRAWL · GAMEPLAY PROTOTYPE v5", 228, 18, "#8B95A3");
   centerText("Press 1 — vs CPU", 310, 26, "#EDEFF2");
   centerText("Press 2 — 2 Players (same keyboard)", 352, 26, "#EDEFF2");
   centerText("Press 3 — Settings", 394, 20, "#C9A15A");
