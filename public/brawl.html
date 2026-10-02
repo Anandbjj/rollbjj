@@ -1,4 +1,4 @@
-<!doctype html>
+A<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -59,7 +59,7 @@ const ATTACKS = {
   upHeavy: { startup:0.26, active:0.12, recovery:0.34, dmg:13, base:380, scale:8.5, angle:88, w:76, h:66, ox:0,  oy:-106, len:56, anim:"up", shake:10 },
   grab:    { startup:0.08, active:0.10, recovery:0.34, grab:true, w:54, h:58, ox:30, oy:-40, len:30, anim:"grab" },
   throwLag:{ startup:0, active:0, recovery:0.2, noHit:true, len:40, anim:"idle" },
-  // Signature moves (down + heavy)
+  // Signature moves (one button: P1 T · P2 O · controller Y)
   sig_arrow:   { startup:0.16, active:0.02, recovery:0.30, projectile:true, dmg:8, base:200, scale:3.4, angle:22, speed:950, len:40, anim:"thrust", cd:1.0 },
   sig_charge:  { startup:0.12, active:0.28, recovery:0.30, dmg:11, base:330, scale:7.0, angle:25, w:66, h:62, ox:30, oy:-44, dash:720, armor:true, len:50, anim:"thrust", cd:1.4 },
   sig_scramble:{ startup:0.05, active:0.20, recovery:0.24, dmg:8,  base:260, scale:5.0, angle:55, w:62, h:66, ox:16, oy:-40, dash:860, invulnActive:true, len:40, anim:"slash", cd:1.1 },
@@ -75,13 +75,37 @@ const THROWS = {
   down:    { name:"TAKEDOWN!",    dmg:12, base:220, scale:1.5, angle:65, knockdown:0.6 },
 };
 
-// ─── Stage ───
-const MAIN = { x:260, y:500, w:760, h:70, solid:true };
-const PLATS = [ MAIN,
-  { x:370, y:360, w:170, h:12 },
-  { x:740, y:360, w:170, h:12 },
-  { x:555, y:230, w:170, h:12 },
+// ─── Stages: each warrior's home turf ───
+const cld = u => u.replace("/upload/", "/upload/f_auto,q_auto,w_1600/");
+const STAGES = [
+  { key:"mongol",  name:"ENDLESS STEPPE",  owner:"MONGOL",  bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233315/IMG_4774.jpg"),
+    main:{ x:210, y:500, w:860, h:70 }, plats:[ { x:300, y:380, w:160, h:12 }, { x:820, y:380, w:160, h:12 } ] },
+  { key:"knight",  name:"CASTLE KEEP",     owner:"KNIGHT",  bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233315/IMG_4778.jpg"),
+    main:{ x:260, y:500, w:760, h:70 }, plats:[ { x:370, y:360, w:170, h:12 }, { x:740, y:360, w:170, h:12 }, { x:555, y:230, w:170, h:12 } ] },
+  { key:"viking",  name:"FJORD LONGSHIP",  owner:"VIKING",  bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233316/IMG_4777.jpg"),
+    main:{ x:320, y:500, w:640, h:70 }, plats:[ { x:150, y:400, w:130, h:12 }, { x:1000, y:400, w:130, h:12 }, { x:560, y:300, w:160, h:12, move:{ range:220, speed:0.9 } } ] },
+  { key:"samurai", name:"MOUNTAIN TEMPLE", owner:"SAMURAI", bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233315/IMG_4775.jpg"),
+    main:{ x:290, y:500, w:700, h:70 }, plats:[ { x:330, y:390, w:150, h:12 }, { x:565, y:300, w:150, h:12 }, { x:800, y:210, w:150, h:12 } ] },
+  { key:"spartan", name:"HOT GATES",       owner:"SPARTAN", bg:cld("https://res.cloudinary.com/qt4ptjgy/image/upload/v1788233316/IMG_4776_1.jpg"),
+    main:{ x:330, y:500, w:620, h:70 }, plats:[ { x:565, y:330, w:150, h:12 } ] },
 ];
+let STAGE, MAIN, PLATS;
+function loadStage(st){
+  STAGE = st;
+  MAIN = { ...st.main, solid:true };
+  PLATS = [ MAIN, ...st.plats.map(p => ({ ...p, baseX:p.x, dx:0, t:0 })) ];
+}
+loadStage(STAGES[1]);
+const BG_IMG = {};
+if (typeof Image !== "undefined") STAGES.forEach(st => { const img = new Image(); img.src = st.bg; BG_IMG[st.key] = img; });
+function updatePlats(dt){
+  for (const p of PLATS){
+    if (!p.move){ p.dx = 0; continue; }
+    p.t += dt * p.move.speed;
+    const nx = p.baseX + Math.sin(p.t) * p.move.range;
+    p.dx = nx - p.x; p.x = nx;
+  }
+}
 const BLAST = { l:-260, r:W+260, t:-260, b:H+220 };
 
 // ─── Input ───
@@ -93,17 +117,17 @@ addEventListener("keydown", e => {
   if ([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(k)) e.preventDefault();
 });
 addEventListener("keyup", e => down.delete(e.key.toLowerCase()));
-const P1KEYS = { left:"a", right:"d", up:"w", down:"s", light:"f", heavy:"g", dodge:"h", grab:"r" };
-const P2KEYS = { left:"arrowleft", right:"arrowright", up:"arrowup", down:"arrowdown", light:"k", heavy:"l", dodge:"j", grab:"i" };
+const P1KEYS = { left:"a", right:"d", up:"w", down:"s", light:"f", heavy:"g", dodge:"h", grab:"r", sig:"t" };
+const P2KEYS = { left:"arrowleft", right:"arrowright", up:"arrowup", down:"arrowdown", light:"k", heavy:"l", dodge:"j", grab:"i", sig:"o" };
 const blankInput = () => ({ left:false, right:false, up:false, down:false, jumpP:false, lightP:false, heavyP:false,
-  dodgeP:false, dodge:false, grabP:false, leftP:false, rightP:false });
+  dodgeP:false, dodge:false, grabP:false, sigP:false, leftP:false, rightP:false, upP:false, downP:false });
 function keyInput(k){
   return { left:down.has(k.left), right:down.has(k.right), up:down.has(k.up), down:down.has(k.down),
     jumpP:pressed.has(k.up), lightP:pressed.has(k.light), heavyP:pressed.has(k.heavy),
-    dodgeP:pressed.has(k.dodge), dodge:down.has(k.dodge), grabP:pressed.has(k.grab),
-    leftP:pressed.has(k.left), rightP:pressed.has(k.right) };
+    dodgeP:pressed.has(k.dodge), dodge:down.has(k.dodge), grabP:pressed.has(k.grab), sigP:pressed.has(k.sig),
+    leftP:pressed.has(k.left), rightP:pressed.has(k.right), upP:pressed.has(k.up), downP:pressed.has(k.down) };
 }
-// Controller (Xbox/PS layout): stick/d-pad move · A jump · X light · B heavy · Y/LB grab · RB/triggers shield & dodge
+// Controller (Xbox/PS layout): stick/d-pad move · A jump · X light · B heavy · Y signature · LB grab · RB/triggers shield & dodge
 const padPrev = [{}, {}];
 function padInput(i){
   const gp = (navigator.getGamepads ? navigator.getGamepads() : [])[i];
@@ -111,22 +135,42 @@ function padInput(i){
   const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
   const b = n => !!(gp.buttons[n] && gp.buttons[n].pressed);
   const prev = padPrev[i], edge = n => b(n) && !prev[n];
-  const L = ax < -0.4 || b(14), R = ax > 0.4 || b(15);
+  const L = ax < -0.4 || b(14), R = ax > 0.4 || b(15), U = ay < -0.5 || b(12), D = ay > 0.5 || b(13);
   const r = {
     left:L, right:R, up: ay < -0.5 || b(12), down: ay > 0.5 || b(13),
-    jumpP: edge(0), lightP: edge(2), heavyP: edge(1), grabP: edge(3) || edge(4),
+    jumpP: edge(0), lightP: edge(2), heavyP: edge(1), grabP: edge(4), sigP: edge(3),
     dodgeP: edge(5) || edge(6) || edge(7), dodge: b(5) || b(6) || b(7),
-    leftP: L && !prev.L, rightP: R && !prev.R,
+    leftP: L && !prev.L, rightP: R && !prev.R, upP: U && !prev.U, downP: D && !prev.D,
   };
   for (let n = 0; n < 16; n++) prev[n] = b(n);
-  prev.L = L; prev.R = R;
+  prev.L = L; prev.R = R; prev.U = U; prev.D = D;
   return r;
 }
 function merge(a, b){ if (!b) return a; const o = {}; for (const k in a) o[k] = a[k] || b[k]; return o; }
 
 // ─── Game state ───
 let P1, P2, state = "menu", winner = null, paused = false, hitstop = 0, shake = 0, playTime = 0;
-let vsCpu = true, pick = { p1:3, p2:2, p1ok:false, p2ok:false };
+let vsCpu = true, pick = { p1:3, p2:2, p1ok:false, p2ok:false }, homeTag = null;
+
+// ─── Settings (remembered on this device) ───
+const STAGE_OPTIONS = [
+  { key:"home",   name:"HOME TURF", desc:"Random — one of the two fighters' homes" },
+  { key:"random", name:"RANDOM",    desc:"Any stage, picked at random" },
+  ...STAGES.map(st => ({ key:st.key, name:st.name, desc:st.owner + "'S HOME" })),
+];
+const DIFFS = { easy:{ name:"EASY", react:1.9, def:0.4 }, normal:{ name:"NORMAL", react:1.0, def:1.0 }, hard:{ name:"HARD", react:0.5, def:1.9 } };
+const DIFF_KEYS = ["easy", "normal", "hard"];
+let settings = { stage:"home", stocks:3, cpu:"normal" };
+try { const sv = JSON.parse(localStorage.getItem("rw_brawl_settings") || "null"); if (sv) settings = { ...settings, ...sv }; } catch(e) {}
+function saveSettings(){ try { localStorage.setItem("rw_brawl_settings", JSON.stringify(settings)); } catch(e) {} }
+let setRow = 0;
+function resolveStage(){
+  if (settings.stage === "home"){
+    const keys = [WARRIORS[pick.p1].key, WARRIORS[pick.p2].key];
+    STAGE = STAGES.find(st => st.key === keys[Math.floor(Math.random() * 2)]);
+  } else if (settings.stage === "random") STAGE = STAGES[Math.floor(Math.random() * STAGES.length)];
+  else STAGE = STAGES.find(st => st.key === settings.stage) || STAGES[1];
+}
 const parts = [], projs = [], floats = [];
 
 function shade(hex, amt){
@@ -145,10 +189,13 @@ function makeFighter(o){
     invuln:0, flash:0, dropT:0, dead:false, respawnT:0, spin:0, ai:{ think:0, plan:null, shieldT:0 } };
 }
 function startGame(){
+  T.stocks = settings.stocks;
   const s1 = WARRIORS[pick.p1], s2 = WARRIORS[pick.p2];
   P1 = makeFighter({ tag:"P1", stats:s1, color:s1.color, keys:P1KEYS, x:W/2 - 160, facing:1 });
   P2 = makeFighter({ tag:vsCpu ? "CPU" : "P2", stats:s2, color: pick.p1 === pick.p2 ? shade(s2.color, 70) : s2.color, keys:P2KEYS, x:W/2 + 160, facing:-1 });
   P2.cpu = vsCpu;
+  loadStage(STAGE);
+  homeTag = STAGE.owner === P1.name ? P1 : STAGE.owner === P2.name ? P2 : null;
   parts.length = 0; projs.length = 0; floats.length = 0;
   winner = null; paused = false; hitstop = 0; shake = 0; playTime = 0;
   state = "playing";
@@ -227,7 +274,7 @@ function updateFighter(f, inp, dt){
 
     if (!f.attack){
       if (inp.grabP && f.onGround) startAttack(f, "grab");
-      else if (inp.heavyP && inp.down && f.sigCD <= 0){ startAttack(f, S.sig); f.sigCD = ATTACKS[S.sig].cd; }
+      else if (inp.sigP && f.sigCD <= 0){ startAttack(f, S.sig); f.sigCD = ATTACKS[S.sig].cd; }
       else if (inp.lightP || inp.heavyP) startAttack(f, inp.heavyP ? (inp.up ? "upHeavy" : "heavy") : (inp.up ? "upLight" : "light"));
     }
   } else if (stunned){
@@ -266,6 +313,7 @@ function updateFighter(f, inp, dt){
 
 function moveAndCollide(f, dt){
   const wasGround = f.onGround;
+  if (f.onGround && f.ground && f.ground.dx) f.x += f.ground.dx;   // ride moving platforms
   f.x += f.vx * dt;
   const l = f.x - f.w/2, r = f.x + f.w/2;
   if (l < MAIN.x + MAIN.w && r > MAIN.x && f.y > MAIN.y + 4 && f.y - f.h < MAIN.y + MAIN.h){
@@ -430,12 +478,13 @@ function cpuInput(me, op){
   const oA = atk(op);
   if (oA && !oA.noHit && op.atkT < oA.startup && adx < 130 && ady < 80){
     const r = Math.random();
-    if (me.onGround && r < 0.05){ me.ai.shieldT = 0.3 + Math.random() * 0.25; inp.dodge = true; inp.dodgeP = true; return inp; }
-    if (r < 0.08 && me.dodgeCD <= 0){ inp.dodgeP = true; inp[dx > 0 ? "left" : "right"] = true; return inp; }
+    const dfn = DIFFS[settings.cpu].def;
+    if (me.onGround && r < 0.05 * dfn){ me.ai.shieldT = 0.3 + Math.random() * 0.25; inp.dodge = true; inp.dodgeP = true; return inp; }
+    if (r < 0.08 * dfn && me.dodgeCD <= 0){ inp.dodgeP = true; inp[dx > 0 ? "left" : "right"] = true; return inp; }
   }
   me.ai.think -= 1/60;
   if (me.ai.think <= 0){
-    me.ai.think = 0.16 + Math.random() * 0.24;      // reaction time
+    me.ai.think = (0.16 + Math.random() * 0.24) * DIFFS[settings.cpu].react;   // reaction time (difficulty)
     const r = Math.random();
     let plan = "approach";
     if (op.shielding && adx < 75 && me.onGround) plan = "grab";
@@ -457,7 +506,7 @@ function cpuInput(me, op){
       me.ai.plan = null; break;
     case "sig":
       if (!facingOp && me.stats.sig !== "sig_slam"){ inp[towards] = true; break; }
-      inp.down = true; inp.heavyP = true; me.ai.plan = null; break;
+      inp.sigP = true; me.ai.plan = null; break;
     case "jump": inp.jumpP = true; me.ai.plan = "approach"; break;
     case "approach":
       inp[towards] = true;
@@ -510,17 +559,35 @@ function stepSelect(){
       if (i2.lightP || i2.jumpP) pick.p2ok = true;
     }
   }
-  if (pick.p1ok && pick.p2ok) startGame();
+  if (pick.p1ok && pick.p2ok){ resolveStage(); startGame(); }
+}
+function stepSettings(){
+  const i = merge(merge(keyInput(P1KEYS), keyInput(P2KEYS)), padInput(0));
+  if (pressed.has("escape") || pressed.has("enter") || i.lightP){ saveSettings(); state = "menu"; return; }
+  if (i.upP) setRow = (setRow + 2) % 3;
+  if (i.downP) setRow = (setRow + 1) % 3;
+  const d = i.leftP ? -1 : i.rightP ? 1 : 0;
+  if (!d) return;
+  if (setRow === 0){
+    const idx = STAGE_OPTIONS.findIndex(o => o.key === settings.stage);
+    settings.stage = STAGE_OPTIONS[(idx + d + STAGE_OPTIONS.length) % STAGE_OPTIONS.length].key;
+  } else if (setRow === 1) settings.stocks = Math.max(1, Math.min(5, settings.stocks + d));
+  else {
+    const idx = DIFF_KEYS.indexOf(settings.cpu);
+    settings.cpu = DIFF_KEYS[(idx + d + DIFF_KEYS.length) % DIFF_KEYS.length];
+  }
 }
 function step(dt){
   if (state === "menu"){
     if (pressed.has("1") || menuStartPressed()){ vsCpu = true; goSelect(); }
     else if (pressed.has("2")){ vsCpu = false; goSelect(); }
+    else if (pressed.has("3")){ setRow = 0; state = "settings"; }
     return;
   }
   if (state === "select"){ stepSelect(); return; }
+  if (state === "settings"){ stepSettings(); return; }
   if (state === "over"){
-    if (pressed.has("r") || pressed.has("enter")) startGame();
+    if (pressed.has("r") || pressed.has("enter")){ resolveStage(); startGame(); }
     if (pressed.has("c")) goSelect();
     if (pressed.has("m")) state = "menu";
     updateFx(dt);
@@ -531,6 +598,7 @@ function step(dt){
   playTime += dt;
   shake *= 0.86;
   if (hitstop > 0){ hitstop -= dt; return; }
+  updatePlats(dt);
   const i1 = merge(keyInput(P1.keys), padInput(0));
   const i2 = P2.cpu ? cpuInput(P2, P1) : merge(keyInput(P2.keys), padInput(1));
   updateFighter(P1, i1, dt);
@@ -542,7 +610,21 @@ function step(dt){
 
 // ─── Drawing ───
 function roundRect(x, y, w, h, r){ ctx.beginPath(); ctx.moveTo(x+r, y); ctx.arcTo(x+w, y, x+w, y+h, r); ctx.arcTo(x+w, y+h, x, y+h, r); ctx.arcTo(x, y+h, x, y, r); ctx.arcTo(x, y, x+w, y, r); ctx.closePath(); }
+function drawCover(img, x, y, w, h){
+  const ir = img.naturalWidth / img.naturalHeight, r = w / h;
+  let sw = img.naturalWidth, sh = img.naturalHeight, sx = 0, sy = 0;
+  if (ir > r){ sw = sh * r; sx = (img.naturalWidth - sw) / 2; } else { sh = sw / r; sy = (img.naturalHeight - sh) / 2; }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
 function drawBackground(){
+  const img = STAGE && BG_IMG[STAGE.key];
+  if ((state === "playing" || state === "over") && img && img.complete && img.naturalWidth){
+    drawCover(img, -40, -40, W + 80, H + 80);
+    const o = ctx.createLinearGradient(0, 0, 0, H);           // darken so fighters stay readable
+    o.addColorStop(0, "rgba(11,14,19,0.35)"); o.addColorStop(0.6, "rgba(11,14,19,0.5)"); o.addColorStop(1, "rgba(11,14,19,0.85)");
+    ctx.fillStyle = o; ctx.fillRect(-50, -50, W + 100, H + 100);
+    return;
+  }
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, "#151B26"); g.addColorStop(1, "#07090C");
   ctx.fillStyle = g; ctx.fillRect(-50, -50, W+100, H+100);
@@ -558,8 +640,8 @@ function drawStage(){
       ctx.fillStyle = g; roundRect(p.x, p.y, p.w, p.h + 90, 14); ctx.fill();
       ctx.fillStyle = "#C9A15A"; ctx.fillRect(p.x + 8, p.y, p.w - 16, 5);
     } else {
-      ctx.fillStyle = "#232A36"; roundRect(p.x, p.y, p.w, p.h, 6); ctx.fill();
-      ctx.fillStyle = "rgba(201,161,90,0.8)"; ctx.fillRect(p.x + 6, p.y, p.w - 12, 3);
+      ctx.fillStyle = p.move ? "#3A2E1C" : "#232A36"; roundRect(p.x, p.y, p.w, p.h, 6); ctx.fill();
+      ctx.fillStyle = p.move ? "#E8C46A" : "rgba(201,161,90,0.8)"; ctx.fillRect(p.x + 6, p.y, p.w - 12, 3);
     }
   }
 }
@@ -610,7 +692,9 @@ function drawFighter(f){
   ctx.translate(f.x, f.y - f.h/2);
   if (f.knockdown > 0 && f.onGround){ ctx.translate(0, f.h/2 - f.w/2); ctx.rotate(-f.facing * Math.PI/2); }
   else if (f.spin) ctx.rotate(f.spin * (f.vx >= 0 ? 1 : -1));
+  ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 10;
   drawBody(f.color, f.facing, f.flash > 0);
+  ctx.shadowBlur = 0;
   const A = atk(f) || ATTACKS.light;
   const reach = f.attack && !f.attack.startsWith("sig_") ? f.stats.reach : 1;
   const active = f.attack && !A.noHit && f.atkT >= A.startup && f.atkT <= A.startup + A.active;
@@ -686,8 +770,8 @@ function drawHUD(){
   if (playTime < 7){
     ctx.globalAlpha = Math.min(1, 7 - playTime);
     ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.textAlign = "center";
-    ctx.fillText("P1: WASD move/jump · F light · G heavy · S+G signature · R grab (then a direction to throw) · hold H shield / H+dir roll", W/2, 30);
-    if (!P2.cpu) ctx.fillText("P2: Arrows move/jump · K light · L heavy · ↓+L signature · I grab · hold J shield / J+dir roll", W/2, 50);
+    ctx.fillText("P1: WASD move/jump · F light · G heavy · T signature · R grab (then a direction to throw) · hold H shield / H+dir roll", W/2, 30);
+    if (!P2.cpu) ctx.fillText("P2: Arrows move/jump · K light · L heavy · O signature · I grab · hold J shield / J+dir roll", W/2, 50);
     ctx.globalAlpha = 1;
   }
 }
@@ -704,16 +788,19 @@ function centerText(t, y, size, color, weight = "bold"){
 function drawMenu(){
   drawBackground();
   centerText("ROLLWARRIORS", 190, 64, "#C9A15A");
-  centerText("BRAWL · GAMEPLAY PROTOTYPE v2", 228, 18, "#8B95A3");
+  centerText("BRAWL · GAMEPLAY PROTOTYPE v3", 228, 18, "#8B95A3");
   centerText("Press 1 — vs CPU", 310, 26, "#EDEFF2");
   centerText("Press 2 — 2 Players (same keyboard)", 352, 26, "#EDEFF2");
-  centerText("P1: WASD move & jump · F light · G heavy · S+G signature · R grab · H shield/dodge", 430, 15, "#B7BFC9", "normal");
-  centerText("P2: Arrows move & jump · K light · L heavy · ↓+L signature · I grab · J shield/dodge", 456, 15, "#B7BFC9", "normal");
-  centerText("Hold UP while attacking for up-attacks · hold DOWN to drop through platforms", 482, 15, "#B7BFC9", "normal");
-  centerText("Controller: stick move · A jump · X light · B heavy · down+B signature · Y/LB grab · RB/triggers shield", 508, 15, "#B7BFC9", "normal");
-  centerText("ATTACK beats GRAB · GRAB beats SHIELD · SHIELD beats ATTACK", 566, 18, "#C9A15A");
+  centerText("Press 3 — Settings", 394, 20, "#C9A15A");
+  const so = STAGE_OPTIONS.find(o => o.key === settings.stage);
+  centerText("Stage: " + so.name + "   ·   Stocks: " + settings.stocks + "   ·   CPU: " + DIFFS[settings.cpu].name, 640, 14, "#5D6673", "normal");
+  centerText("P1: WASD move & jump · F light · G heavy · T signature · R grab · H shield/dodge", 448, 15, "#B7BFC9", "normal");
+  centerText("P2: Arrows move & jump · K light · L heavy · O signature · I grab · J shield/dodge", 472, 15, "#B7BFC9", "normal");
+  centerText("Hold UP while attacking for up-attacks · hold DOWN to drop through platforms", 496, 15, "#B7BFC9", "normal");
+  centerText("Controller: stick move · A jump · X light · B heavy · Y signature · LB grab · RB/triggers shield", 520, 15, "#B7BFC9", "normal");
+  centerText("ATTACK beats GRAB · GRAB beats SHIELD · SHIELD beats ATTACK", 568, 18, "#C9A15A");
   centerText("Grab, then hold a direction to throw: → Double Leg · ← Hip Throw · ↑ Suplex · ↓ Takedown", 594, 15, "#B7BFC9", "normal");
-  if ("ontouchstart" in window) centerText("Keyboard or controller needed — touch controls come later.", 650, 15, "#E86A6A", "normal");
+  if ("ontouchstart" in window) centerText("Keyboard or controller needed — touch controls come later.", 672, 15, "#E86A6A", "normal");
 }
 function wrap(text, x, y, maxW, lineH){
   const words = text.split(" "); let line = "";
@@ -758,8 +845,53 @@ function drawSelect(){
   });
   centerText(vsCpu ? "P1: A / D to choose · F to confirm · Esc back" : "P1: A / D choose · F confirm      P2: ← / → choose · K confirm      Esc back", 650, 15, "#8B95A3", "normal");
 }
+function drawSettings(){
+  drawBackground();
+  centerText("SETTINGS", 100, 44, "#C9A15A");
+  const opt = STAGE_OPTIONS.find(o => o.key === settings.stage);
+  const rows = [
+    ["DEFAULT STAGE", opt.name, opt.desc],
+    ["STOCKS (LIVES)", String(settings.stocks), settings.stocks === 1 ? "One life — sudden death" : settings.stocks + " lives each"],
+    ["CPU DIFFICULTY", DIFFS[settings.cpu].name, settings.cpu === "easy" ? "Slow reactions, rarely blocks" : settings.cpu === "hard" ? "Fast reactions, blocks and dodges a lot" : "A fair fight"],
+  ];
+  rows.forEach(([label, val, sub], i) => {
+    const y = 180 + i * 110, x = 120, w = 620, sel = setRow === i;
+    ctx.fillStyle = sel ? "rgba(201,161,90,0.14)" : "rgba(29,35,45,0.9)"; roundRect(x, y, w, 90, 14); ctx.fill();
+    if (sel){ ctx.strokeStyle = "#C9A15A"; ctx.lineWidth = 3; roundRect(x, y, w, 90, 14); ctx.stroke(); }
+    ctx.textAlign = "left"; ctx.fillStyle = "#8B95A3"; ctx.font = "bold 13px system-ui"; ctx.fillText(label, x + 24, y + 30);
+    ctx.fillStyle = "#EDEFF2"; ctx.font = "900 26px system-ui"; ctx.fillText((sel ? "◀  " : "") + val + (sel ? "  ▶" : ""), x + 24, y + 64);
+    ctx.textAlign = "right"; ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.fillText(sub, x + w - 24, y + 64);
+  });
+  // stage preview
+  const px = 790, py = 180, pw = 370, ph = 208;
+  ctx.fillStyle = "rgba(29,35,45,0.9)"; roundRect(px, py, pw, ph + 102, 14); ctx.fill();
+  ctx.save(); roundRect(px, py, pw, ph, 14); ctx.clip();
+  const st = STAGES.find(x => x.key === settings.stage);
+  if (st && BG_IMG[st.key] && BG_IMG[st.key].complete && BG_IMG[st.key].naturalWidth) drawCover(BG_IMG[st.key], px, py, pw, ph);
+  else {
+    ctx.fillStyle = "#232A36"; ctx.fillRect(px, py, pw, ph);
+    ctx.fillStyle = "#C9A15A"; ctx.font = "900 64px system-ui"; ctx.textAlign = "center"; ctx.fillText("?", px + pw/2, py + ph/2 + 22);
+  }
+  ctx.restore();
+  const sc = (pw - 40) / W, lx = px + 20, ly = py + ph + 14;
+  if (st){
+    ctx.fillStyle = "#C9A15A"; ctx.fillRect(lx + st.main.x * sc, ly + (st.main.y - 150) * sc, st.main.w * sc, 5);
+    ctx.fillStyle = "#8B95A3"; for (const p of st.plats) ctx.fillRect(lx + p.x * sc, ly + (p.y - 150) * sc, p.w * sc, 3);
+  } else { ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("Stage decided when the match starts", px + pw/2, ly + 40); }
+  centerText("W / S choose setting   ·   A / D change   ·   F or Esc to save", 560, 15, "#8B95A3", "normal");
+  centerText("Settings are saved on this device.", 586, 13, "#5D6673", "normal");
+}
+function drawBanner(){
+  if (playTime > 2.6) return;
+  ctx.globalAlpha = Math.min(1, (2.6 - playTime) / 0.5, playTime / 0.25);
+  ctx.fillStyle = "rgba(11,14,19,0.75)"; ctx.fillRect(0, 118, W, 78);
+  centerText(STAGE.name, 155, 34, "#EDEFF2", "900");
+  centerText(homeTag ? homeTag.tag + " " + homeTag.name + "'S HOME TURF" : "NEUTRAL GROUND", 182, 15, homeTag ? homeTag.color : "#8B95A3");
+  ctx.globalAlpha = 1;
+}
 function draw(){
   ctx.save();
+  if (state === "settings"){ drawSettings(); ctx.restore(); return; }
   if (state === "menu"){ drawMenu(); ctx.restore(); return; }
   if (state === "select"){ drawSelect(); ctx.restore(); return; }
   const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
@@ -770,6 +902,7 @@ function draw(){
   drawOffscreen(P1); drawOffscreen(P2);
   ctx.restore();
   drawHUD();
+  drawBanner();
   if (paused){
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
     centerText("PAUSED", H/2, 48, "#EDEFF2"); centerText("Press P to resume", H/2 + 40, 16, "#8B95A3", "normal");
