@@ -95,10 +95,10 @@ const ATTACKS = {
 
 // Grab, then hold a direction to throw. Grabs beat shields.
 const THROWS = {
-  forward: { name:"DOUBLE LEG!",  dmg:9,  base:300, scale:6.2, angle:28 },
-  back:    { name:"HIP THROW!",   dmg:10, base:320, scale:6.6, angle:40 },
-  up:      { name:"SUPLEX!",      dmg:9,  base:300, scale:6.0, angle:88 },
-  down:    { name:"TAKEDOWN!",    dmg:12, base:220, scale:1.5, angle:65, knockdown:0.6 },
+  forward: { name:"DOUBLE LEG!",  dmg:9,  base:300, scale:6.2, angle:28, dur:0.34 },
+  back:    { name:"HIP THROW!",   dmg:10, base:320, scale:6.6, angle:40, dur:0.42 },
+  up:      { name:"SUPLEX!",      dmg:9,  base:300, scale:6.0, angle:88, dur:0.40 },
+  down:    { name:"TAKEDOWN!",    dmg:12, base:220, scale:1.5, angle:65, dur:0.40, knockdown:0.55 },
 };
 
 // ─── Stages: each warrior's home turf ───
@@ -251,7 +251,7 @@ function makeFighter(o){
     dmg:0, stocks:T.stocks, attack:null, atkT:0, fired:false, hitIds:new Set(),
     hitstun:0, knockdown:0, dizzy:0, dodgeT:0, dodgeCD:0, airDodged:false,
     shielding:false, wasShielding:false, shieldHP:T.shieldMax, sigCD:0, downHeld:0,
-    grabbing:null, grabbedBy:null, grabT:0,
+    grabbing:null, grabbedBy:null, grabT:0, throwing:null, thrownBy:null, pose:null,
     invuln:0, flash:0, dropT:0, dead:false, respawnT:0, spin:0, ai:{ think:0, plan:null, shieldT:0 } };
 }
 function startGame(){
@@ -283,11 +283,13 @@ function updateFighter(f, inp, dt){
   f.landT = Math.max(0, f.landT - dt);
   if (!f.shielding) f.shieldHP = Math.min(T.shieldMax, f.shieldHP + T.shieldRegen * dt);
 
+  if (f.thrownBy){ f.shielding = false; return; }        // mid-throw: the thrower moves us
+  if (f.throwing){ updateThrow(f, dt); return; }         // playing a throw animation
   if (f.grabbedBy){ f.shielding = false; return; }       // held: the grabber controls us
 
   if (f.grabbing){                                          // holding someone: pick a throw
     f.grabT += dt; f.vx = 0; f.vy = 0;
-    const v = f.grabbing; v.x = f.x + f.facing * 42; v.y = f.y; v.vx = 0; v.vy = 0;
+    const v = f.grabbing; v.x = f.x + f.facing * 54; v.y = f.y; v.vx = 0; v.vy = 0;
     let dirKey = null;
     if (f.grabT > 0.1){
       if (inp.up) dirKey = "up"; else if (inp.down) dirKey = "down";
@@ -417,12 +419,13 @@ function hitbox(f){
 }
 function checkHits(a, b){
   const hb = hitbox(a);
-  if (!hb || b.dead || b.grabbedBy || a.hitIds.has(b)) return;
+  if (!hb || b.dead || b.grabbedBy || b.thrownBy || b.throwing || a.hitIds.has(b)) return;
   if (!overlap(hb, body(b))) return;
   const A = hb.A;
   if (A.grab){
     if (b.invuln > 0 || b.dodgeT > 0 || !b.onGround || b.grabbing) return;
-    a.hitIds.add(b); a.attack = null; a.grabbing = b; a.grabT = 0;
+    a.hitIds.add(b); a.attack = null; a.grabbing = b; a.grabT = 0; b.facing = -a.facing;
+    sparks(a.x + a.facing * 30, a.y - 50, "#FFFFFF", 8, 180); hitstop = 0.05;
     b.grabbedBy = a; b.attack = null; b.shielding = false; b.hitstun = 0; b.knockdown = 0; b.dizzy = 0;
     return;
   }
@@ -464,14 +467,74 @@ function breakShield(f){
   f.vy = -520; f.onGround = false; shake = Math.max(shake, 10);
   popText("SHIELD BREAK!", f.x, f.y - f.h - 30, "#BFE3FF");
 }
+const ease = k => k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+const clamp01 = k => Math.max(0, Math.min(1, k));
 function doThrow(f, dirKey){
   const v = f.grabbing; f.grabbing = null; v.grabbedBy = null;
-  const TH = THROWS[dirKey];
-  let dir = f.facing;
-  if (dirKey === "back"){ v.x = f.x - f.facing * 42; dir = -f.facing; f.facing = -f.facing; }
+  f.throwing = { kind:dirKey, t:0, dur:THROWS[dirKey].dur, v, x0:f.x, y0:f.y, d:f.facing, impact:false };
+  v.thrownBy = f;
+  popText(THROWS[dirKey].name, (f.x + v.x) / 2, f.y - 140, f.color);
+}
+// Keyframed throw animations. d = direction the thrower faced when the throw started.
+function updateThrow(f, dt){
+  const th = f.throwing, v = th.v, d = th.d;
+  th.t += dt;
+  const k = clamp01(th.t / th.dur);
+  f.vx = f.vy = 0; v.vx = v.vy = 0; v.y = th.y0; f.y = th.y0;
+  switch (th.kind){
+    case "forward": {                       // DOUBLE LEG: level change, drive through, they tip over backward
+      const drop = clamp01(k / 0.3), drive = ease(clamp01((k - 0.3) / 0.7));
+      f.x = th.x0 + d * 46 * drive;
+      v.x = f.x + d * (54 + 6 * drive);
+      f.pose = { lean: 0.32 * drop, sy: 1 - 0.16 * drop, sx: 1 + 0.08 * drop };
+      v.pose = { rot: -1.35 * drive, pivot: "feet" };
+      break;
+    }
+    case "back": {                          // HIP THROW: swing them over the hip, flip, turn around
+      const a = Math.PI * ease(k);
+      v.x = f.x + d * Math.cos(a) * 60;
+      v.y = th.y0 - Math.sin(a) * 66;
+      f.facing = k < 0.5 ? d : -d;
+      f.pose = { lean: 0.18 * Math.sin(Math.PI * k), sy: 1 - 0.08 * Math.sin(Math.PI * k) };
+      v.pose = { rot: -Math.PI * ease(k), pivot: "center" };
+      break;
+    }
+    case "up": {                            // SUPLEX: arch back and lift them overhead, upside down
+      const lift = ease(k);
+      v.x = f.x + d * 54 * (1 - lift);
+      v.y = th.y0 - 112 * lift;
+      f.pose = { lean: -0.38 * lift, sy: 1 - 0.06 * lift };
+      v.pose = { rot: -Math.PI * lift, pivot: "center" };
+      break;
+    }
+    case "down": {                          // TAKEDOWN: lift, slam flat, land on top in mount
+      const lift = k < 0.35 ? ease(k / 0.35) : 1 - ease(clamp01((k - 0.35) / 0.25));
+      const slam = clamp01((k - 0.35) / 0.25);
+      v.x = th.x0 + d * 56;
+      v.y = th.y0 - 26 * lift;
+      v.pose = { rot: -Math.PI / 2 * ease(slam), pivot: "feet" };
+      f.x = th.x0 + d * 28 * ease(slam);
+      f.pose = { lean: 0.15 + 0.25 * slam, sy: 1 - 0.2 * slam, sx: 1 + 0.1 * slam };
+      if (!th.impact && k >= 0.6){
+        th.impact = true; shake = Math.max(shake, 12); hitstop = 0.06;
+        sparks(v.x, th.y0, "#C8B08A", 22, 300); sparks(v.x, th.y0 - 10, "#FFFFFF", 8, 200);
+      }
+      break;
+    }
+  }
+  if (k >= 1) finishThrow(f);
+}
+function finishThrow(f){
+  const th = f.throwing, v = th.v, TH = THROWS[th.kind];
+  f.throwing = null; v.thrownBy = null; f.pose = null; v.pose = null;
+  let dir = th.d;
+  if (th.kind === "back"){ dir = -th.d; f.facing = -th.d; }
+  if (th.kind === "up") v.y = Math.min(v.y, th.y0);
   applyHit(f, v, TH, dir);
-  if (TH.knockdown) v.knockdown = TH.knockdown;
-  popText(TH.name, v.x, v.y - v.h - 24, f.color);
+  if (TH.knockdown){                          // pinned flat on the mat — no bounce, no spin
+    v.knockdown = TH.knockdown; v.y = th.y0; v.vx = 0; v.vy = 0; v.onGround = true; v.hitstun = 0; v.spin = 0;
+  }
+  if (th.kind === "forward") sparks(v.x, th.y0, "#C8B08A", 12, 240);
   startAttack(f, "throwLag");
 }
 function spawnArrow(f, A){ projs.push({ x:f.x + f.facing * 30, y:f.y - 48, vx:f.facing * A.speed, owner:f, A, life:1.1 }); }
@@ -480,7 +543,7 @@ function updateProjs(dt){
     const p = projs[i]; p.x += p.vx * dt; p.life -= dt;
     let hit = false;
     for (const b of [P1, P2]){
-      if (b === p.owner || b.dead || b.invuln > 0 || b.grabbedBy) continue;
+      if (b === p.owner || b.dead || b.invuln > 0 || b.grabbedBy || b.thrownBy || b.throwing) continue;
       const bb = body(b);
       if (p.x > bb.x - 14 && p.x < bb.x + bb.w + 14 && p.y > bb.y && p.y < bb.y + bb.h){
         const dir = Math.sign(p.vx);
@@ -494,6 +557,9 @@ function updateProjs(dt){
 function releaseGrabs(f){
   if (f.grabbing){ f.grabbing.grabbedBy = null; f.grabbing = null; }
   if (f.grabbedBy){ f.grabbedBy.grabbing = null; f.grabbedBy = null; }
+  if (f.throwing){ f.throwing.v.thrownBy = null; f.throwing.v.pose = null; f.throwing = null; }
+  if (f.thrownBy){ f.thrownBy.throwing = null; f.thrownBy.pose = null; f.thrownBy = null; }
+  f.pose = null;
 }
 function KO(f){
   releaseGrabs(f);
@@ -505,7 +571,7 @@ function KO(f){
 function respawn(f){
   Object.assign(f, { dead:false, x: W/2 + (f === P1 ? -80 : 80), y:120, vx:0, vy:0, dmg:0, invuln:T.respawnInvuln,
     attack:null, hitstun:0, knockdown:0, dizzy:0, jumps:f.stats.jumps, dodgeT:0, onGround:false,
-    shielding:false, shieldHP:T.shieldMax, sigCD:0, grabbing:null, grabbedBy:null });
+    shielding:false, shieldHP:T.shieldMax, sigCD:0, grabbing:null, grabbedBy:null, throwing:null, thrownBy:null, pose:null });
 }
 
 // ─── CPU opponent (beatable on purpose — has reaction delay) ───
@@ -521,7 +587,7 @@ function sigInRange(sig, adx, ady){
 }
 function cpuInput(me, op){
   const inp = blankInput();
-  if (me.dead || op.dead || me.grabbedBy) return inp;
+  if (me.dead || op.dead || me.grabbedBy || me.thrownBy || me.throwing) return inp;
   if (me.grabbing){                                   // choose a throw
     if (me.grabT > 0.15){
       const nearRight = (MAIN.x + MAIN.w - me.x) < (me.x - MAIN.x);
@@ -901,7 +967,7 @@ function drawVignette(){
 function swordAngle(f){ return swordAngleAt(f, f.atkT); }
 function swordAngleAt(f, t){
   const idle = (LOOK[f.stats.key] || {}).idle ?? 0.6;
-  if (f.grabbing) return 1.1;
+  if (f.grabbing || f.throwing) return 1.1;
   const A = atk(f);
   if (!A) return idle;
   const lerp = (a, b, k) => a + (b - a) * Math.max(0, Math.min(1, k));
@@ -992,9 +1058,16 @@ function drawFighter(f){
       else { if (ph === 0){ lean -= heavy ? 0.1 : 0.05; tx -= heavy ? 6 : 3; } else if (ph === 1){ lean += heavy ? 0.14 : 0.08; tx += heavy ? 10 : 6; } }
     }
     if (dashing){ sx *= 1.08; sy *= 0.95; }
+    if (f.grabbing){ lean += 0.1; }                              // leaning into the grip
+    if (f.grabbedBy){ tx += Math.sin(animT * 42) * 2.2; lean -= 0.12; }   // struggling in the clinch
+    if (f.pose){ lean += f.pose.lean || 0; sy *= f.pose.sy || 1; sx *= f.pose.sx || 1; }
     if (f.shielding){ sy *= 0.96; lean -= 0.03; }
     const dh = L.h, dw = art ? dh * ART_META[key].w / ART_META[key].h : f.w;
-    if (f.knockdown > 0 && f.onGround){ ctx.translate(dh / 2, -L.cx * dw); ctx.rotate(-Math.PI / 2); }
+    if (f.pose && f.pose.rot){
+      if (f.pose.pivot === "center"){ ctx.translate(0, -dh / 2); ctx.rotate(f.pose.rot); ctx.translate(0, dh / 2); }
+      else ctx.rotate(f.pose.rot);
+    }
+    else if (f.knockdown > 0 && f.onGround){ ctx.translate(dh / 2, -L.cx * dw); ctx.rotate(-Math.PI / 2); }
     else if (f.spin){ ctx.translate(0, -dh / 2); ctx.rotate(f.spin); ctx.translate(0, dh / 2); }
     ctx.translate(tx, ty); ctx.rotate(lean); ctx.scale(sx, sy);
     if (art){
@@ -1027,8 +1100,17 @@ function drawFighter(f){
       ctx.beginPath(); ctx.arc(f.x + Math.cos(a2) * 22, topY - 4 + Math.sin(a2) * 5, 4, 0, Math.PI*2); ctx.fill();
     }
   }
+  const other = f === P1 ? P2 : P1;
+  const crowded = other && !other.dead && Math.abs(other.x - f.x) < 120 && Math.abs(other.y - f.y) < 60;
+  const tagY = topY - 12 - (crowded && f === P2 ? 16 : 0);
   ctx.fillStyle = f.color; ctx.font = "bold 13px system-ui"; ctx.textAlign = "center";
-  ctx.fillText(f.tag + " " + f.name, f.x, topY - 12);
+  ctx.fillText(f.tag + " " + f.name, f.x, tagY);
+  if (f.grabbing && !f.cpu){
+    const hx = (f.x + f.grabbing.x) / 2, hy = topY - 52;
+    ctx.fillStyle = "rgba(11,14,19,0.85)"; roundRect(hx - 92, hy - 17, 184, 26, 13); ctx.fill();
+    ctx.fillStyle = "#C9A15A"; ctx.font = "bold 13px system-ui";
+    ctx.fillText("THROW   ←  →  ↑  ↓", hx, hy + 1);
+  }
 }
 function drawProjs(){
   for (const p of projs){
