@@ -33,20 +33,21 @@ const T = {
   dodgeTime: 0.22, dodgeSpeed: 620, dodgeCooldown: 0.7,
   shieldMax: 100, shieldDrain: 10, shieldRegen: 18, shieldBreakStun: 1.6,
   grabHold: 0.7, dropHold: 0.15,
+  subTime: 4.0, subPress: 5, subDriftFrom: 50, subDriftRate: 0.2,   // submission battle: past 60% damage the meter drifts toward tapping
   respawnInvuln: 1.5, stocks: 3,
 };
 
 // ─── The warriors (multipliers: 1.0 = average) ───
 const WARRIORS = [
-  { key:"mongol",  name:"MONGOL",  title:"Guard Wizard",      color:"#4C7BE0", speed:1.0,  jump:1.1,  power:1.0,  weight:1.0,  reach:1.0,  jumps:2,
+  { key:"mongol",  name:"MONGOL",  title:"Guard Wizard",      color:"#4C7BE0", speed:1.0,  jump:1.1,  power:1.0,  weight:1.0,  reach:1.0,  jumps:2, sub:"TRIANGLE", subPower:1.08, escape:1.0,
     sig:"sig_arrow",    sigName:"Horse Archer",       sigDesc:"Fires an arrow. Control the fight from range." },
-  { key:"knight",  name:"KNIGHT",  title:"Pressure Passer",   color:"#D9DEE5", speed:0.88, jump:0.95, power:1.08, weight:1.2,  reach:1.05, jumps:2,
+  { key:"knight",  name:"KNIGHT",  title:"Pressure Passer",   color:"#D9DEE5", speed:0.88, jump:0.95, power:1.08, weight:1.2,  reach:1.05, jumps:2, sub:"KIMURA", subPower:1.05, escape:1.0,
     sig:"sig_charge",   sigName:"Pressure Charge",    sigDesc:"Armored charge. Hits can't flinch you." },
-  { key:"viking",  name:"VIKING",  title:"Scrambler",         color:"#4CB27A", speed:1.15, jump:1.05, power:1.08, weight:0.97, reach:0.95, jumps:3,
+  { key:"viking",  name:"VIKING",  title:"Scrambler",         color:"#4CB27A", speed:1.15, jump:1.05, power:1.08, weight:0.97, reach:0.95, jumps:3, sub:"GUILLOTINE", subPower:1.0, escape:1.2,
     sig:"sig_scramble", sigName:"Berserker Scramble", sigDesc:"Invincible dash through enemies. Triple jump." },
-  { key:"samurai", name:"SAMURAI", title:"Submission Hunter", color:"#D2483F", speed:1.0,  jump:1.0,  power:1.02, weight:1.0,  reach:1.12,  jumps:2,
+  { key:"samurai", name:"SAMURAI", title:"Submission Hunter", color:"#D2483F", speed:1.0,  jump:1.0,  power:1.02, weight:1.0,  reach:1.12,  jumps:2, sub:"ARMBAR", subPower:1.15, escape:1.0,
     sig:"sig_iaido",    sigName:"Iaido Strike",       sigDesc:"Lightning quick-draw with huge reach." },
-  { key:"spartan", name:"SPARTAN", title:"Anchor",            color:"#E0A030", speed:0.88, jump:0.94, power:1.14, weight:1.3,  reach:1.0,  jumps:2,
+  { key:"spartan", name:"SPARTAN", title:"Anchor",            color:"#E0A030", speed:0.88, jump:0.94, power:1.14, weight:1.3,  reach:1.0,  jumps:2, sub:"REAR NAKED CHOKE", subPower:1.02, escape:1.0,
     sig:"sig_slam",     sigName:"Phalanx Slam",       sigDesc:"Ground slam that launches on both sides." },
 ];
 
@@ -85,6 +86,7 @@ const ATTACKS = {
   upHeavy: { startup:0.26, active:0.12, recovery:0.34, dmg:13, base:380, scale:8.5, angle:88, w:76, h:66, ox:0,  oy:-106, len:56, anim:"up", shake:10 },
   grab:    { startup:0.08, active:0.10, recovery:0.34, grab:true, w:54, h:58, ox:30, oy:-40, len:30, anim:"grab" },
   throwLag:{ startup:0, active:0, recovery:0.2, noHit:true, len:40, anim:"idle" },
+  subLag:  { startup:0, active:0, recovery:0.45, noHit:true, len:40, anim:"idle" },
   // Signature moves (one button: P1 T · P2 O · controller Y)
   sig_arrow:   { startup:0.16, active:0.02, recovery:0.30, projectile:true, dmg:8, base:200, scale:3.4, angle:22, speed:950, len:40, anim:"thrust", cd:1.0 },
   sig_charge:  { startup:0.12, active:0.28, recovery:0.30, dmg:11, base:330, scale:7.0, angle:25, w:66, h:62, ox:30, oy:-44, dash:720, armor:true, len:50, anim:"thrust", cd:1.4 },
@@ -98,7 +100,7 @@ const THROWS = {
   forward: { name:"DOUBLE LEG!",  dmg:9,  base:300, scale:6.2, angle:28, dur:0.34 },
   back:    { name:"HIP THROW!",   dmg:10, base:320, scale:6.6, angle:40, dur:0.42 },
   up:      { name:"SUPLEX!",      dmg:9,  base:300, scale:6.0, angle:88, dur:0.40 },
-  down:    { name:"TAKEDOWN!",    dmg:12, base:220, scale:1.5, angle:65, dur:0.40, knockdown:0.55 },
+  down:    { name:"TAKEDOWN!",    dmg:12, base:220, scale:1.5, angle:65, dur:0.40, knockdown:0.7 },
 };
 
 // ─── Stages: each warrior's home turf ───
@@ -251,7 +253,7 @@ function makeFighter(o){
     dmg:0, stocks:T.stocks, attack:null, atkT:0, fired:false, hitIds:new Set(),
     hitstun:0, knockdown:0, dizzy:0, dodgeT:0, dodgeCD:0, airDodged:false,
     shielding:false, wasShielding:false, shieldHP:T.shieldMax, sigCD:0, downHeld:0,
-    grabbing:null, grabbedBy:null, grabT:0, throwing:null, thrownBy:null, pose:null,
+    grabbing:null, grabbedBy:null, grabT:0, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null, squeezeT:0,
     invuln:0, flash:0, dropT:0, dead:false, respawnT:0, spin:0, ai:{ think:0, plan:null, shieldT:0 } };
 }
 function startGame(){
@@ -283,6 +285,12 @@ function updateFighter(f, inp, dt){
   f.landT = Math.max(0, f.landT - dt);
   if (!f.shielding) f.shieldHP = Math.min(T.shieldMax, f.shieldHP + T.shieldRegen * dt);
 
+  if (f.subbedBy){                                        // caught in a submission: mash to escape
+    f.shielding = false;
+    if (inp.lightP || inp.heavyP) f.subbedBy.subbing.meter -= T.subPress * f.stats.escape;
+    return;
+  }
+  if (f.subbing){ updateSub(f, inp, dt); return; }       // cranking a submission
   if (f.thrownBy){ f.shielding = false; return; }        // mid-throw: the thrower moves us
   if (f.throwing){ updateThrow(f, dt); return; }         // playing a throw animation
   if (f.grabbedBy){ f.shielding = false; return; }       // held: the grabber controls us
@@ -419,10 +427,11 @@ function hitbox(f){
 }
 function checkHits(a, b){
   const hb = hitbox(a);
-  if (!hb || b.dead || b.grabbedBy || b.thrownBy || b.throwing || a.hitIds.has(b)) return;
+  if (!hb || b.dead || b.grabbedBy || b.thrownBy || b.throwing || b.subbedBy || b.subbing || a.hitIds.has(b)) return;
   if (!overlap(hb, body(b))) return;
   const A = hb.A;
   if (A.grab){
+    if (b.knockdown > 0 && b.onGround && !b.invuln){ a.hitIds.add(b); startSub(a, b); return; }   // pinned → submit
     if (b.invuln > 0 || b.dodgeT > 0 || !b.onGround || b.grabbing) return;
     a.hitIds.add(b); a.attack = null; a.grabbing = b; a.grabT = 0; b.facing = -a.facing;
     sparks(a.x + a.facing * 30, a.y - 50, "#FFFFFF", 8, 180); hitstop = 0.05;
@@ -524,6 +533,45 @@ function updateThrow(f, dt){
   }
   if (k >= 1) finishThrow(f);
 }
+function startSub(a, v){
+  a.attack = null;
+  const meter = Math.max(5, Math.min(85, 5 + v.dmg * 0.5));
+  a.subbing = { v, meter, t:0, name:a.stats.sub };
+  v.subbedBy = a; v.knockdown = 0; v.hitstun = 0; v.attack = null;
+  a.vx = a.vy = 0; v.vx = v.vy = 0;
+  a.facing = v.x >= a.x ? 1 : -1;
+  a.x = v.x - a.facing * 30; a.y = v.y;
+  v.pose = { rot: -Math.PI / 2, pivot: "feet" };
+  popText(a.stats.sub + "!", (a.x + v.x) / 2, a.y - 150, a.color);
+  hitstop = 0.08; shake = Math.max(shake, 6);
+}
+function updateSub(a, inp, dt){
+  const sb = a.subbing, v = sb.v;
+  sb.t += dt;
+  a.vx = a.vy = 0; v.vx = v.vy = 0;
+  if (inp.lightP || inp.heavyP){ sb.meter += T.subPress * a.stats.subPower; a.squeezeT = 0.1; }
+  a.squeezeT = Math.max(0, a.squeezeT - dt);
+  sb.meter += (v.dmg - T.subDriftFrom) * T.subDriftRate * dt; // hurt opponents slip toward tapping, fresh ones toward escaping
+  a.pose = { lean: 0.3, sy: 0.82 * (a.squeezeT > 0 ? 0.96 : 1), sx: a.squeezeT > 0 ? 1.08 : 1.04 };
+  if (sb.meter >= 100) endSub(a, "tap");
+  else if (sb.meter <= 0 || sb.t >= T.subTime) endSub(a, "escape");
+}
+function endSub(a, result){
+  const sb = a.subbing, v = sb.v;
+  a.subbing = null; v.subbedBy = null; a.pose = null; v.pose = null;
+  if (result === "tap"){
+    popText("TAP! " + sb.name, v.x, v.y - 160, a.color);
+    hitstop = 0.35; shake = 18;
+    sparks(v.x, v.y - 30, "#FFFFFF", 30, 420); sparks(v.x, v.y - 30, a.color, 24, 360);
+    KO(v);
+  } else {
+    popText("ESCAPED!", v.x, v.y - 150, v.color);
+    v.invuln = 0.4;
+    v.vx = (v.x >= a.x ? 1 : -1) * 320; v.vy = -260; v.onGround = false;
+    a.vx = -(v.x >= a.x ? 1 : -1) * 120;
+    startAttack(a, "subLag");                                   // whiffed submission leaves you open
+  }
+}
 function finishThrow(f){
   const th = f.throwing, v = th.v, TH = THROWS[th.kind];
   f.throwing = null; v.thrownBy = null; f.pose = null; v.pose = null;
@@ -543,7 +591,7 @@ function updateProjs(dt){
     const p = projs[i]; p.x += p.vx * dt; p.life -= dt;
     let hit = false;
     for (const b of [P1, P2]){
-      if (b === p.owner || b.dead || b.invuln > 0 || b.grabbedBy || b.thrownBy || b.throwing) continue;
+      if (b === p.owner || b.dead || b.invuln > 0 || b.grabbedBy || b.thrownBy || b.throwing || b.subbedBy || b.subbing) continue;
       const bb = body(b);
       if (p.x > bb.x - 14 && p.x < bb.x + bb.w + 14 && p.y > bb.y && p.y < bb.y + bb.h){
         const dir = Math.sign(p.vx);
@@ -559,6 +607,8 @@ function releaseGrabs(f){
   if (f.grabbedBy){ f.grabbedBy.grabbing = null; f.grabbedBy = null; }
   if (f.throwing){ f.throwing.v.thrownBy = null; f.throwing.v.pose = null; f.throwing = null; }
   if (f.thrownBy){ f.thrownBy.throwing = null; f.thrownBy.pose = null; f.thrownBy = null; }
+  if (f.subbing){ f.subbing.v.subbedBy = null; f.subbing.v.pose = null; f.subbing = null; }
+  if (f.subbedBy){ f.subbedBy.subbing = null; f.subbedBy.pose = null; f.subbedBy = null; }
   f.pose = null;
 }
 function KO(f){
@@ -571,7 +621,7 @@ function KO(f){
 function respawn(f){
   Object.assign(f, { dead:false, x: W/2 + (f === P1 ? -80 : 80), y:120, vx:0, vy:0, dmg:0, invuln:T.respawnInvuln,
     attack:null, hitstun:0, knockdown:0, dizzy:0, jumps:f.stats.jumps, dodgeT:0, onGround:false,
-    shielding:false, shieldHP:T.shieldMax, sigCD:0, grabbing:null, grabbedBy:null, throwing:null, thrownBy:null, pose:null });
+    shielding:false, shieldHP:T.shieldMax, sigCD:0, grabbing:null, grabbedBy:null, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null });
 }
 
 // ─── CPU opponent (beatable on purpose — has reaction delay) ───
@@ -587,12 +637,24 @@ function sigInRange(sig, adx, ady){
 }
 function cpuInput(me, op){
   const inp = blankInput();
-  if (me.dead || op.dead || me.grabbedBy || me.thrownBy || me.throwing) return inp;
+  if (me.dead || op.dead) return inp;
+  if (me.subbing || me.subbedBy){                                        // mash
+    const rate = { easy:4, normal:7, hard:10 }[settings.cpu];
+    if (Math.random() < rate / 60) inp.lightP = true;
+    return inp;
+  }
+  if (me.grabbedBy || me.thrownBy || me.throwing) return inp;
+  if (op.knockdown > 0 && op.onGround && !op.subbedBy && Math.abs(op.x - me.x) < 90 && !me.attack){   // pinned → go for the sub
+    const toward = op.x > me.x ? "right" : "left";
+    if ((op.x > me.x) !== (me.facing > 0)) inp[toward] = true; else inp.grabP = true;
+    return inp;
+  }
   if (me.grabbing){                                   // choose a throw
     if (me.grabT > 0.15){
       const nearRight = (MAIN.x + MAIN.w - me.x) < (me.x - MAIN.x);
-      if (op.dmg >= 85) inp[nearRight ? "right" : "left"] = true;
-      else if (Math.random() < 0.5) inp.down = true; else inp.up = true;
+      if (op.dmg >= 85 && Math.random() < 0.5) inp[nearRight ? "right" : "left"] = true;   // ring-out throw
+      else if (Math.random() < (op.dmg >= 85 ? 1 : 0.5)) inp.down = true;                   // takedown → submission
+      else inp.up = true;
     }
     return inp;
   }
@@ -1065,7 +1127,7 @@ function drawFighter(f){
     const dh = L.h, dw = art ? dh * ART_META[key].w / ART_META[key].h : f.w;
     if (f.pose && f.pose.rot){
       if (f.pose.pivot === "center"){ ctx.translate(0, -dh / 2); ctx.rotate(f.pose.rot); ctx.translate(0, dh / 2); }
-      else ctx.rotate(f.pose.rot);
+      else { const k = Math.min(1, Math.abs(f.pose.rot) / (Math.PI / 2)); ctx.translate(dh / 2 * k, -L.cx * dw * k); ctx.rotate(f.pose.rot); }
     }
     else if (f.knockdown > 0 && f.onGround){ ctx.translate(dh / 2, -L.cx * dw); ctx.rotate(-Math.PI / 2); }
     else if (f.spin){ ctx.translate(0, -dh / 2); ctx.rotate(f.spin); ctx.translate(0, dh / 2); }
@@ -1073,7 +1135,8 @@ function drawFighter(f){
     if (art){
       let trail = null;
       if (inActive && !ghost) trail = [0.016, 0.032, 0.048].map(d => swordAngleAt(f, f.atkT - d));
-      drawWarriorArt(key, { ang: swordAngle(f), trail, flash: ghost ? 0 : f.flash, noWeapon: ghost });
+      const lying = (f.knockdown > 0 && f.onGround) || f.subbedBy || (f.pose && f.pose.pivot === "feet" && Math.abs(f.pose.rot) > 1);
+      drawWarriorArt(key, { ang: swordAngle(f), trail, flash: ghost ? 0 : f.flash, noWeapon: ghost || lying });
     } else {                                                   // fallback until art loads
       ctx.translate(0, -f.h / 2);
       ctx.shadowColor = "rgba(0,0,0,0.7)"; ctx.shadowBlur = 10;
@@ -1102,9 +1165,31 @@ function drawFighter(f){
   }
   const other = f === P1 ? P2 : P1;
   const crowded = other && !other.dead && Math.abs(other.x - f.x) < 120 && Math.abs(other.y - f.y) < 60;
-  const tagY = topY - 12 - (crowded && f === P2 ? 16 : 0);
+  const otherTop = other ? other.y - (LOOK[other.stats.key] || { h:other.h }).h : topY;
+  const tagY = crowded ? Math.min(topY, otherTop) - 12 - (f === P2 ? 18 : 0) : topY - 12;
   ctx.fillStyle = f.color; ctx.font = "bold 13px system-ui"; ctx.textAlign = "center";
-  ctx.fillText(f.tag + " " + f.name, f.x, tagY);
+  if (!f.subbing && !f.subbedBy) ctx.fillText(f.tag + " " + f.name, f.x, tagY);
+  if (f.subbing){                                              // submission meter
+    const sb = f.subbing, v = sb.v, mx = (f.x + v.x) / 2, my = f.y - 150, bw = 180;
+    ctx.fillStyle = "rgba(11,14,19,0.88)"; roundRect(mx - bw/2 - 10, my - 30, bw + 20, 64, 12); ctx.fill();
+    ctx.fillStyle = f.color; ctx.font = "900 15px system-ui"; ctx.fillText(sb.name, mx, my - 12);
+    ctx.fillStyle = "rgba(255,255,255,0.12)"; roundRect(mx - bw/2, my - 4, bw, 12, 6); ctx.fill();
+    const k = Math.max(0, Math.min(1, sb.meter / 100));
+    ctx.fillStyle = k > 0.8 ? "#FF4A4A" : f.color; roundRect(mx - bw/2, my - 4, bw * k, 12, 6); ctx.fill();
+    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(mx - bw/2 + bw - 2, my - 7, 3, 18);
+    ctx.font = "bold 11px system-ui"; ctx.fillStyle = "#B7BFC9";
+    const key = p => p === P1 ? "F" : "K";
+    const lines = [];
+    if (!f.cpu) lines.push(f.tag + ": MASH " + key(f) + " TO FINISH");
+    if (!v.cpu) lines.push(v.tag + ": MASH " + key(v) + " TO ESCAPE");
+    ctx.fillText(lines.join("   ·   "), mx, my + 24);
+  }
+  if (f.knockdown > 0 && f.onGround && !f.subbedBy && other && !other.cpu && !other.dead){
+    const hy = f.y - 150;
+    ctx.fillStyle = "rgba(11,14,19,0.88)"; roundRect(f.x - 78, hy - 17, 156, 26, 13); ctx.fill();
+    ctx.fillStyle = "#C9A15A"; ctx.font = "900 13px system-ui";
+    ctx.fillText((other === P1 ? "R" : "I") + " — GRAB TO SUBMIT!", f.x, hy + 1);
+  }
   if (f.grabbing && !f.cpu){
     const hx = (f.x + f.grabbing.x) / 2, hy = topY - 52;
     ctx.fillStyle = "rgba(11,14,19,0.85)"; roundRect(hx - 92, hy - 17, 184, 26, 13); ctx.fill();
@@ -1181,7 +1266,7 @@ function centerText(t, y, size, color, weight = "bold"){
 function drawMenu(){
   drawBackground();
   centerText("ROLLWARRIORS", 190, 64, "#C9A15A");
-  centerText("BRAWL · GAMEPLAY PROTOTYPE v6", 228, 18, "#8B95A3");
+  centerText("BRAWL · GAMEPLAY PROTOTYPE v8", 228, 18, "#8B95A3");
   centerText("Press 1 — vs CPU", 310, 26, "#EDEFF2");
   centerText("Press 2 — 2 Players (same keyboard)", 352, 26, "#EDEFF2");
   centerText("Press 3 — Settings", 394, 20, "#C9A15A");
@@ -1192,7 +1277,8 @@ function drawMenu(){
   centerText("Hold UP while attacking for up-attacks · hold DOWN to drop through platforms", 496, 15, "#B7BFC9", "normal");
   centerText("Controller: stick move · A jump · X light · B heavy · Y signature · LB grab · RB/triggers shield", 520, 15, "#B7BFC9", "normal");
   centerText("ATTACK beats GRAB · GRAB beats SHIELD · SHIELD beats ATTACK", 568, 18, "#C9A15A");
-  centerText("Grab, then hold a direction to throw: → Double Leg · ← Hip Throw · ↑ Suplex · ↓ Takedown", 594, 15, "#B7BFC9", "normal");
+  centerText("Grab, then a direction to throw: → Double Leg · ← Hip Throw · ↑ Suplex · ↓ Takedown", 594, 15, "#B7BFC9", "normal");
+  centerText("After a TAKEDOWN, GRAB the pinned opponent to SUBMIT them — mash to finish, mash to escape!", 618, 15, "#C9A15A", "normal");
   if ("ontouchstart" in window) centerText("Keyboard or controller needed — touch controls come later.", 672, 15, "#E86A6A", "normal");
 }
 function wrap(text, x, y, maxW, lineH){
@@ -1231,6 +1317,7 @@ function drawSelect(){
     ctx.fillText("★ " + Wr.sigName, x + cw/2, y0 + 336);
     ctx.fillStyle = "#B7BFC9"; ctx.font = "12px system-ui";
     wrap(Wr.sigDesc, x + cw/2, y0 + 358, cw - 30, 16);
+    ctx.fillStyle = Wr.color; ctx.font = "bold 12px system-ui"; ctx.fillText("Finish: " + Wr.sub, x + cw/2, y0 + 404);
     // cursors
     const sel1 = pick.p1 === i, sel2 = pick.p2 === i && (!vsCpu || pick.p2ok);
     if (sel1){ ctx.strokeStyle = pick.p1ok ? "#C9A15A" : "#FFFFFF"; ctx.lineWidth = 4; roundRect(x - 3, y0 - 3, cw + 6, ch + 6, 18); ctx.stroke(); }
@@ -1296,7 +1383,8 @@ function draw(){
   drawAmbient(false);
   if (STAGE.key === "viking") drawWater(false);
   drawStage();
-  drawFighter(P1); drawFighter(P2);
+  const onTop = f => !!(f.subbing || f.throwing || f.grabbing);      // whoever is in control is drawn in front
+  if (onTop(P1) && !onTop(P2)){ drawFighter(P2); drawFighter(P1); } else { drawFighter(P1); drawFighter(P2); }
   drawProjs(); drawParticles();
   drawAmbient(true);
   if (STAGE.key === "viking") drawWater(true);
