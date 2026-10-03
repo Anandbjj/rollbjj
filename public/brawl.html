@@ -220,6 +220,48 @@ function merge(a, b){ if (!b) return a; const o = {}; for (const k in a) o[k] = 
 let P1, P2, state = "menu", winner = null, paused = false, hitstop = 0, shake = 0, playTime = 0;
 let vsCpu = true, pick = { p1:3, p2:2, p1ok:false, p2ok:false }, homeTag = null;
 
+// ─── Practice mode ───
+let practice = false, dummyMode = 0, dummyDmgIdx = 0, showBoxes = false, showMoves = false;
+let lastHit = null, lastMove = null, combo = 0, practiceKOs = 0;
+const DUMMY_MODES = ["STAND", "SHIELD", "JUMP", "FIGHT BACK"];
+const DUMMY_DMG = [0, 50, 100, 150];
+function moveName(A){
+  for (const k in THROWS) if (THROWS[k] === A) return THROWS[k].name.replace("!", "");
+  for (const k in ATTACKS) if (ATTACKS[k] === A){
+    if (k.startsWith("sig_")){ const w = WARRIORS.find(x => x.sig === k); return w ? w.sigName : k; }
+    return { light:"Light", heavy:"Heavy", upLight:"Up Light", upHeavy:"Up Heavy" }[k] || k;
+  }
+  return "Hit";
+}
+function practiceReset(){
+  for (const [f, x, fc] of [[P1, W/2 - 160, 1], [P2, W/2 + 160, -1]]){
+    releaseGrabs(f);
+    Object.assign(f, { dead:false, x, y:MAIN.y, vx:0, vy:0, facing:fc, onGround:true, attack:null, hitstun:0, knockdown:0, dizzy:0,
+      dodgeT:0, invuln:0, shielding:false, shieldHP:T.shieldMax, sigCD:0, spin:0 });
+  }
+  P1.dmg = 0; P2.dmg = DUMMY_DMG[dummyDmgIdx];
+  projs.length = 0; combo = 0; lastHit = null;
+}
+function setupDummy(){
+  P2.cpu = true; P2.tag = "DUMMY";
+}
+function dummyInput(me, op){
+  const inp = blankInput();
+  const mode = DUMMY_MODES[dummyMode];
+  if (mode === "FIGHT BACK") return cpuInput(me, op);
+  if (me.dead || me.grabbedBy || me.thrownBy || me.subbedBy || me.hitstun > 0 || me.knockdown > 0 || me.dizzy > 0) return inp;
+  // every dummy recovers back to the stage if knocked off
+  const offStage = me.x < MAIN.x - 8 || me.x > MAIN.x + MAIN.w + 8 || me.y > MAIN.y + 5;
+  if (offStage){
+    if (me.x < MAIN.x + MAIN.w / 2) inp.right = true; else inp.left = true;
+    if (me.vy > 40 && me.jumps > 0) inp.jumpP = true;
+    return inp;
+  }
+  if (mode === "SHIELD" && me.onGround) inp.dodge = true;
+  if (mode === "JUMP" && me.onGround && Math.random() < 0.03) inp.jumpP = true;
+  return inp;
+}
+
 // ─── Settings (remembered on this device) ───
 const STAGE_OPTIONS = [
   { key:"home",   name:"HOME TURF", desc:"Random — one of the two fighters' homes" },
@@ -262,6 +304,7 @@ function startGame(){
   P1 = makeFighter({ tag:"P1", stats:s1, color:s1.color, keys:P1KEYS, x:W/2 - 160, facing:1 });
   P2 = makeFighter({ tag:vsCpu ? "CPU" : "P2", stats:s2, color: pick.p1 === pick.p2 ? shade(s2.color, 70) : s2.color, keys:P2KEYS, x:W/2 + 160, facing:-1 });
   P2.cpu = vsCpu;
+  if (practice){ setupDummy(); P2.dmg = DUMMY_DMG[dummyDmgIdx]; practiceKOs = 0; lastHit = null; lastMove = null; combo = 0; }
   loadStage(STAGE);
   resetAmbient(); bgShift = 0;
   homeTag = STAGE.owner === P1.name ? P1 : STAGE.owner === P2.name ? P2 : null;
@@ -275,7 +318,10 @@ const atk = f => f.attack ? ATTACKS[f.attack] : null;
 function hasArmor(f){ const A = atk(f); return !!(A && A.armor && f.atkT < A.startup + A.active); }
 function popText(text, x, y, color){ floats.push({ text, x, y, color, life:0.9 }); }
 
-function startAttack(f, name){ f.attack = name; f.atkT = 0; f.fired = false; f.hitIds = new Set(); }
+function startAttack(f, name){
+  f.attack = name; f.atkT = 0; f.fired = false; f.hitIds = new Set();
+  if (practice && f === P1 && !ATTACKS[name].noHit) lastMove = name;
+}
 
 // ─── Fighter update ───
 function updateFighter(f, inp, dt){
@@ -446,6 +492,7 @@ function checkHits(a, b){
 }
 function applyHit(a, b, A, dir){
   const pw = a.stats.power;
+  if (practice && b === P2) combo = (b.hitstun > 0 || b.knockdown > 0) ? combo + 1 : 1;
   b.dmg += A.dmg * pw;
   if (b.grabbing){ b.grabbing.grabbedBy = null; b.grabbing = null; }
   if (hasArmor(b)){                                         // armored: take damage, don't flinch
@@ -453,6 +500,7 @@ function applyHit(a, b, A, dir){
     sparks(b.x, b.y - b.h/2, "#FFFFFF", 8, 240); return;
   }
   const kb = (A.base + b.dmg * A.scale) * pw / b.stats.weight;
+  if (practice && b === P2) lastHit = { name: moveName(A), dmg: A.dmg * pw, kb: Math.round(kb), total: b.dmg };
   const ang = A.angle * Math.PI / 180;
   b.vx = Math.cos(ang) * kb * dir; b.vy = -Math.sin(ang) * kb;
   b.onGround = false; b.attack = null; b.dodgeT = 0; b.shielding = false;
@@ -613,13 +661,20 @@ function releaseGrabs(f){
 }
 function KO(f){
   releaseGrabs(f);
+  if (practice){
+    if (f === P2) practiceKOs++;
+    f.dead = true; f.respawnT = 0.8; shake = 16;
+    const cx = Math.max(20, Math.min(W - 20, f.x)), cy = Math.max(20, Math.min(H - 20, f.y - f.h/2));
+    sparks(cx, cy, f.color, 40, 700); sparks(cx, cy, "#FFFFFF", 20, 500);
+    return;
+  }
   f.stocks--; f.dead = true; f.respawnT = 1.0; shake = 16;
   const cx = Math.max(20, Math.min(W - 20, f.x)), cy = Math.max(20, Math.min(H - 20, f.y - f.h/2));
   sparks(cx, cy, f.color, 40, 700); sparks(cx, cy, "#FFFFFF", 20, 500);
   if (f.stocks <= 0){ state = "over"; winner = f === P1 ? P2 : P1; }
 }
 function respawn(f){
-  Object.assign(f, { dead:false, x: W/2 + (f === P1 ? -80 : 80), y:120, vx:0, vy:0, dmg:0, invuln:T.respawnInvuln,
+  Object.assign(f, { dead:false, x: W/2 + (f === P1 ? -80 : 80), y:120, vx:0, vy:0, dmg:(practice && f === P2) ? DUMMY_DMG[dummyDmgIdx] : 0, invuln:T.respawnInvuln,
     attack:null, hitstun:0, knockdown:0, dizzy:0, jumps:f.stats.jumps, dodgeT:0, onGround:false,
     shielding:false, shieldHP:T.shieldMax, sigCD:0, grabbing:null, grabbedBy:null, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null });
 }
@@ -746,7 +801,11 @@ function stepSelect(){
   if (!pick.p1ok){
     if (i1.leftP) pick.p1 = (pick.p1 + n - 1) % n;
     if (i1.rightP) pick.p1 = (pick.p1 + 1) % n;
-    if (i1.lightP || i1.jumpP){ pick.p1ok = true; if (vsCpu){ pick.p2 = Math.floor(Math.random() * n); pick.p2ok = true; } }
+    if (i1.lightP || i1.jumpP){
+      pick.p1ok = true;
+      if (practice){ pick.p2 = (pick.p1 + 1) % n; pick.p2ok = true; }
+      else if (vsCpu){ pick.p2 = Math.floor(Math.random() * n); pick.p2ok = true; }
+    }
   }
   if (!vsCpu){
     const i2 = merge(keyInput(P2KEYS), padInput(1));
@@ -785,8 +844,9 @@ function step(dt){
     }
   }
   if (state === "menu"){
-    if (pressed.has("1") || menuStartPressed()){ vsCpu = true; goSelect(); }
-    else if (pressed.has("2")){ vsCpu = false; goSelect(); }
+    if (pressed.has("1") || menuStartPressed()){ practice = false; vsCpu = true; goSelect(); }
+    else if (pressed.has("2")){ practice = false; vsCpu = false; goSelect(); }
+    else if (pressed.has("4")){ practice = true; vsCpu = true; goSelect(); }
     else if (pressed.has("3")){ setRow = 0; state = "settings"; }
     return;
   }
@@ -799,14 +859,29 @@ function step(dt){
     updateFx(dt);
     return;
   }
-  if (pressed.has("p") || pressed.has("escape")) paused = !paused;
+  if (practice){
+    if (pressed.has("escape")){ practice = false; state = "menu"; return; }
+    if (pressed.has("1")) dummyMode = (dummyMode + 1) % DUMMY_MODES.length;
+    if (pressed.has("2")){ dummyDmgIdx = (dummyDmgIdx + 1) % DUMMY_DMG.length; if (!P2.dead) P2.dmg = DUMMY_DMG[dummyDmgIdx]; }
+    if (pressed.has("3")) practiceReset();
+    if (pressed.has("4")) showBoxes = !showBoxes;
+    if (pressed.has("5")){
+      pick.p2 = (pick.p2 + 1) % WARRIORS.length;
+      const s2 = WARRIORS[pick.p2];
+      releaseGrabs(P1); releaseGrabs(P2);
+      P2 = makeFighter({ tag:"DUMMY", stats:s2, color: pick.p1 === pick.p2 ? shade(s2.color, 70) : s2.color, keys:P2KEYS, x:W/2 + 160, facing:-1 });
+      setupDummy(); practiceReset();
+    }
+    if (pressed.has("6")) showMoves = !showMoves;
+  }
+  if (pressed.has("p") || (pressed.has("escape") && !practice)) paused = !paused;
   if (paused) return;
   playTime += dt;
   shake *= 0.86;
   if (hitstop > 0){ hitstop -= dt; return; }
   updatePlats(dt);
   const i1 = merge(keyInput(P1.keys), padInput(0));
-  const i2 = P2.cpu ? cpuInput(P2, P1) : merge(keyInput(P2.keys), padInput(1));
+  const i2 = practice ? dummyInput(P2, P1) : P2.cpu ? cpuInput(P2, P1) : merge(keyInput(P2.keys), padInput(1));
   updateFighter(P1, i1, dt);
   updateFighter(P2, i2, dt);
   checkHits(P1, P2); checkHits(P2, P1);
@@ -1234,7 +1309,7 @@ function drawHUD(){
     ctx.fillStyle = dmgColor(f.dmg); ctx.font = "bold 34px system-ui";
     ctx.fillText(f.dead ? "—" : Math.round(f.dmg) + "%", x + 16, y + 64);
     // lives: own row, right side
-    for (let s2 = 0; s2 < T.stocks; s2++){
+    if (!practice) for (let s2 = 0; s2 < T.stocks; s2++){
       ctx.fillStyle = s2 < f.stocks ? f.color : "rgba(255,255,255,0.12)";
       ctx.beginPath(); ctx.arc(x + cw - 20 - s2 * 15, y + 56, 5.5, 0, Math.PI*2); ctx.fill();
     }
@@ -1245,7 +1320,7 @@ function drawHUD(){
     ctx.fillStyle = ready ? "#14181F" : "rgba(201,161,90,0.5)"; ctx.font = "bold 13px system-ui"; ctx.textAlign = "center";
     ctx.fillText("★", x + cw - 22, y + 27);
   });
-  if (playTime < 7){
+  if (playTime < 7 && !practice){
     ctx.globalAlpha = Math.min(1, 7 - playTime);
     ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.textAlign = "center";
     ctx.fillText("P1: WASD move/jump · F light · G heavy · T signature · R grab (then a direction to throw) · hold H shield / H+dir roll", W/2, 30);
@@ -1269,7 +1344,7 @@ function drawMenu(){
   centerText("BRAWL · GAMEPLAY PROTOTYPE v8", 228, 18, "#8B95A3");
   centerText("Press 1 — vs CPU", 310, 26, "#EDEFF2");
   centerText("Press 2 — 2 Players (same keyboard)", 352, 26, "#EDEFF2");
-  centerText("Press 3 — Settings", 394, 20, "#C9A15A");
+  centerText("Press 3 — Settings      ·      Press 4 — Practice", 394, 20, "#C9A15A");
   const so = STAGE_OPTIONS.find(o => o.key === settings.stage);
   centerText("Stage: " + so.name + "   ·   Stocks: " + settings.stocks + "   ·   CPU: " + DIFFS[settings.cpu].name, 640, 14, "#5D6673", "normal");
   centerText("P1: WASD move & jump · F light · G heavy · T signature · R grab · H shield/dodge", 448, 15, "#B7BFC9", "normal");
@@ -1364,6 +1439,82 @@ function drawSettings(){
   centerText("W / S choose setting   ·   A / D change   ·   F or Esc to save", 560, 15, "#8B95A3", "normal");
   centerText("Settings are saved on this device.", 586, 13, "#5D6673", "normal");
 }
+function drawBoxes(){
+  for (const f of [P1, P2]){
+    if (f.dead) continue;
+    const b = body(f);
+    ctx.strokeStyle = "rgba(90,230,140,0.9)"; ctx.lineWidth = 2; ctx.strokeRect(b.x, b.y, b.w, b.h);
+    const hb = hitbox(f);
+    if (hb){
+      ctx.fillStyle = hb.A.grab ? "rgba(80,150,255,0.4)" : "rgba(255,60,60,0.4)";
+      ctx.strokeStyle = hb.A.grab ? "#6AA8FF" : "#FF5050";
+      ctx.fillRect(hb.x, hb.y, hb.w, hb.h); ctx.strokeRect(hb.x, hb.y, hb.w, hb.h);
+    }
+  }
+  for (const p of projs){ ctx.strokeStyle = "#FF5050"; ctx.strokeRect(p.x - 14, p.y - 4, 28, 8); }
+}
+function drawPractice(){
+  const x = 16, y = 16, w = 330;
+  ctx.fillStyle = "rgba(11,14,19,0.86)"; roundRect(x, y, w, 196, 14); ctx.fill();
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#C9A15A"; ctx.font = "900 16px system-ui"; ctx.fillText("PRACTICE MODE", x + 14, y + 26);
+  ctx.fillStyle = "#8B95A3"; ctx.font = "bold 11px system-ui"; ctx.fillText("Dummy KOs: " + practiceKOs, x + w - 100, y + 26);
+  const row = (label, val, yy, col) => {
+    ctx.fillStyle = "#8B95A3"; ctx.font = "bold 12px system-ui"; ctx.fillText(label, x + 14, yy);
+    ctx.fillStyle = col || "#EDEFF2"; ctx.font = "bold 12px system-ui"; ctx.fillText(val, x + 120, yy);
+  };
+  row("1  Dummy", DUMMY_MODES[dummyMode], y + 50);
+  row("2  Damage", DUMMY_DMG[dummyDmgIdx] + "% preset", y + 68);
+  row("3  Reset", "positions + damage", y + 86);
+  row("4  Hitboxes", showBoxes ? "ON" : "off", y + 104, showBoxes ? "#5AE68C" : "#5D6673");
+  row("5  Dummy is", P2.name, y + 122, P2.color);
+  row("6  Move list", showMoves ? "ON" : "off", y + 140, showMoves ? "#5AE68C" : "#5D6673");
+  ctx.fillStyle = "#5D6673"; ctx.font = "11px system-ui"; ctx.fillText("Esc — back to menu", x + 14, y + 162);
+  // last hit + frame data
+  if (lastHit){
+    ctx.fillStyle = "#EDEFF2"; ctx.font = "bold 12px system-ui";
+    ctx.fillText("Last hit: " + lastHit.name + "  +" + lastHit.dmg.toFixed(1) + "%  · knockback " + lastHit.kb, x + 14, y + 182);
+  } else { ctx.fillStyle = "#5D6673"; ctx.font = "12px system-ui"; ctx.fillText("Hit the dummy to see damage + knockback", x + 14, y + 182); }
+  if (lastMove){
+    const A = ATTACKS[lastMove], fr = v => Math.round(v * 60);
+    const label = moveName(A);
+    ctx.fillStyle = "rgba(11,14,19,0.86)"; roundRect(x, y + 204, w, 30, 12); ctx.fill();
+    ctx.fillStyle = "#B7BFC9"; ctx.font = "bold 11px system-ui";
+    ctx.fillText(label + "  ·  startup " + fr(A.startup) + "f  ·  active " + fr(A.active) + "f  ·  recovery " + fr(A.recovery) + "f", x + 14, y + 223);
+  }
+  if (combo >= 2 && P2.hitstun > 0){
+    ctx.textAlign = "center"; ctx.font = "900 34px system-ui"; ctx.lineWidth = 6; ctx.strokeStyle = "#0B0E13";
+    ctx.strokeText(combo + " HIT COMBO", W/2, 110); ctx.fillStyle = "#FFD36A"; ctx.fillText(combo + " HIT COMBO", W/2, 110);
+  }
+  if (showMoves) drawMoveList();
+}
+function drawMoveList(){
+  const S = P1.stats, x = W - 356, y = 16, w = 340;
+  const lines = [
+    ["MOVEMENT", ""],
+    ["W / D / A", "jump (x" + S.jumps + ") · move"],
+    ["S", "fast-fall · hold to drop through"],
+    ["H (hold)", "shield · H + direction = roll"],
+    ["ATTACKS", ""],
+    ["F", "light attack"], ["G", "heavy attack"],
+    ["W + F / W + G", "up light / up heavy"],
+    ["T", "★ " + S.sigName],
+    ["GRAPPLING", ""],
+    ["R", "grab (beats shields)"],
+    ["R then →", "Double Leg"], ["R then ←", "Hip Throw"],
+    ["R then ↑", "Suplex"], ["R then ↓", "Takedown → pins them"],
+    ["R on pinned", "submit: " + S.sub + " (mash F)"],
+  ];
+  ctx.fillStyle = "rgba(11,14,19,0.88)"; roundRect(x, y, w, 26 + lines.length * 19, 14); ctx.fill();
+  ctx.textAlign = "left";
+  ctx.fillStyle = P1.color; ctx.font = "900 14px system-ui"; ctx.fillText(P1.name + " — MOVE LIST", x + 14, y + 22);
+  lines.forEach(([k, v], i) => {
+    const yy = y + 44 + i * 19;
+    if (!v){ ctx.fillStyle = "#C9A15A"; ctx.font = "bold 10px system-ui"; ctx.fillText(k, x + 14, yy); return; }
+    ctx.fillStyle = "#EDEFF2"; ctx.font = "bold 12px system-ui"; ctx.fillText(k, x + 14, yy);
+    ctx.fillStyle = "#B7BFC9"; ctx.font = "12px system-ui"; ctx.fillText(v, x + 130, yy);
+  });
+}
 function drawBanner(){
   if (playTime > 2.6) return;
   ctx.globalAlpha = Math.min(1, (2.6 - playTime) / 0.5, playTime / 0.25);
@@ -1386,6 +1537,7 @@ function draw(){
   const onTop = f => !!(f.subbing || f.throwing || f.grabbing);      // whoever is in control is drawn in front
   if (onTop(P1) && !onTop(P2)){ drawFighter(P2); drawFighter(P1); } else { drawFighter(P1); drawFighter(P2); }
   drawProjs(); drawParticles();
+  if (practice && showBoxes) drawBoxes();
   drawAmbient(true);
   if (STAGE.key === "viking") drawWater(true);
   drawVignette();
@@ -1393,7 +1545,7 @@ function draw(){
   drawOffscreen(P1); drawOffscreen(P2);
   ctx.restore();
   drawHUD();
-  drawBanner();
+  if (practice) drawPractice(); else drawBanner();
   if (paused){
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
     centerText("PAUSED", H/2, 48, "#EDEFF2"); centerText("Press P to resume", H/2 + 40, 16, "#8B95A3", "normal");
