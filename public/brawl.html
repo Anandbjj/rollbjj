@@ -34,6 +34,7 @@ const T = {
   dodgeTime: 0.22, dodgeSpeed: 620, dodgeCooldown: 0.7,
   shieldMax: 100, shieldDrain: 10, shieldRegen: 18, shieldBreakStun: 1.6,
   grabHold: 0.7, dropHold: 0.15,
+  gPick: 1.8, gShow: 0.85, gMaxEx: 5,                              // ground game: decision window, reveal time, exchanges before stand-up
   scrTime: 2.2, scrPress: 8, scrStart: 45,                       // scramble after a defended submission
   subTime: 4.0, subPress: 5, subDriftFrom: 50, subDriftRate: 0.2,   // submission battle: past 60% damage the meter drifts toward tapping
   respawnInvuln: 1.5, stocks: 3,
@@ -46,20 +47,20 @@ const WARRIORS = [
     sig:"sig_arrow",    sigName:"Horse Archer",       sigDesc:"Fires an arrow. Control the fight from range." },
   { key:"knight",  name:"KNIGHT",  title:"Pressure Passer",   color:"#D9DEE5", speed:0.88, jump:0.95, power:1.04, weight:1.18, reach:1.05, jumps:2, sub:"KIMURA", subPower:1.05, escape:1.0, ult:"EZEKIEL CHOKE",
     sig:"sig_charge",   sigName:"Pressure Charge",    sigDesc:"Armored charge. Hits can't flinch you." },
-  { key:"viking",  name:"VIKING",  title:"Scrambler",         color:"#4CB27A", speed:1.15, jump:1.05, power:1.04, weight:0.95, reach:0.95, jumps:3, sub:"GUILLOTINE", subPower:1.0, escape:1.2, ult:"TWISTER",
+  { key:"viking",  name:"VIKING",  title:"Scrambler",         color:"#4CB27A", speed:1.15, jump:1.05, power:1.07, weight:0.95, reach:0.95, jumps:3, sub:"GUILLOTINE", subPower:1.0, escape:1.2, ult:"TWISTER",
     sig:"sig_scramble", sigName:"Berserker Scramble", sigDesc:"Invincible dash through enemies. Triple jump." },
-  { key:"samurai", name:"SAMURAI", title:"Submission Hunter", color:"#D2483F", speed:1.0,  jump:1.0,  power:1.02, weight:1.0,  reach:1.08,  jumps:2, sub:"ARMBAR", subPower:1.15, escape:1.0, ult:"FLYING ARMBAR",
+  { key:"samurai", name:"SAMURAI", title:"Submission Hunter", color:"#D2483F", speed:1.0,  jump:1.0,  power:1.02, weight:1.0,  reach:1.08,  jumps:2, sub:"ARMBAR", subPower:1.06, escape:1.0, ult:"FLYING ARMBAR",
     sig:"sig_iaido",    sigName:"Iaido Strike",       sigDesc:"Lightning quick-draw with huge reach." },
-  { key:"spartan", name:"SPARTAN", title:"Anchor",            color:"#E0A030", speed:0.98, jump:0.98, power:1.17, weight:1.3,  reach:1.0,  jumps:2, sub:"REAR NAKED CHOKE", subPower:1.02, escape:1.0, ult:"PERUVIAN NECKTIE",
+  { key:"spartan", name:"SPARTAN", title:"Anchor",            color:"#E0A030", speed:0.98, jump:0.98, power:1.16, weight:1.3,  reach:1.0,  jumps:2, sub:"REAR NAKED CHOKE", subPower:1.02, escape:1.0, ult:"PERUVIAN NECKTIE",
     sig:"sig_slam",     sigName:"Phalanx Slam",       sigDesc:"Ground slam that launches on both sides." },
   // ── Exclusive heroes ──
-  { key:"roman",   name:"LEGATUS", title:"The Legion",        color:"#A66BE8", speed:0.94, jump:0.95, power:1.05, weight:1.14, reach:0.92, jumps:2, sub:"ARM TRIANGLE", subPower:1.06, escape:1.0, ult:"NORTH-SOUTH CHOKE", exclusive:true,
+  { key:"roman",   name:"LEGATUS", title:"The Legion",        color:"#A66BE8", speed:0.94, jump:0.95, power:1.09, weight:1.14, reach:0.92, jumps:2, sub:"ARM TRIANGLE", subPower:1.06, escape:1.0, ult:"NORTH-SOUTH CHOKE", exclusive:true,
     sig:"sig_shieldwall", sigName:"Shield Wall Rush", sigDesc:"Scutum charge that blocks arrows and shots." },
-  { key:"khan",    name:"GREAT KHAN", title:"The Conqueror",   color:"#FFD95A", speed:0.92, jump:0.95, power:1.03, weight:1.15, reach:1.0,  jumps:2, sub:"ANACONDA CHOKE", subPower:1.04, escape:1.0, ult:"DARCE CHOKE", exclusive:true,
+  { key:"khan",    name:"GREAT KHAN", title:"The Conqueror",   color:"#FFD95A", speed:0.92, jump:0.95, power:1.02, weight:1.15, reach:1.0,  jumps:2, sub:"ANACONDA CHOKE", subPower:1.04, escape:1.0, ult:"DARCE CHOKE", exclusive:true,
     sig:"sig_cavalry",  sigName:"Cavalry Charge",     sigDesc:"Rides his war horse across the stage, trampling all." },
-  { key:"aztec",   name:"AZTEC",   title:"Sun's Talon",       color:"#2EC4B6", speed:1.12, jump:1.18, power:1.03, weight:0.95, reach:1.0,  jumps:2, sub:"HEEL HOOK", subPower:1.1, escape:1.1, ult:"FLYING TRIANGLE", exclusive:true,
+  { key:"aztec",   name:"AZTEC",   title:"Sun's Talon",       color:"#2EC4B6", speed:1.12, jump:1.18, power:1.06, weight:0.95, reach:1.0,  jumps:2, sub:"HEEL HOOK", subPower:1.1, escape:1.1, ult:"FLYING TRIANGLE", exclusive:true,
     sig:"sig_eagledive", sigName:"Eagle Dive",        sigDesc:"Leaps, then dives talons-first from the sky." },
-  { key:"cleopatra", name:"CLEOPATRA", title:"Pharaoh Queen", color:"#6C63FF", speed:1.05, jump:1.02, power:1.07, weight:0.98, reach:1.1, jumps:2, sub:"BOW AND ARROW CHOKE", subPower:1.08, escape:1.05, ult:"OMOPLATA", exclusive:true,
+  { key:"cleopatra", name:"CLEOPATRA", title:"Pharaoh Queen", color:"#6C63FF", speed:1.05, jump:1.02, power:1.1,  weight:0.98, reach:1.1, jumps:2, sub:"BOW AND ARROW CHOKE", subPower:1.08, escape:1.05, ult:"OMOPLATA", exclusive:true,
     sig:"sig_cobra",    sigName:"Cobra Strike",       sigDesc:"Khopesh hook that drags enemies to her." },
   { key:"napoleon", name:"NAPOLEON", title:"The Emperor",     color:"#7FD1FF", speed:0.96, jump:0.96, power:1.03, weight:1.03, reach:1.12, jumps:2, sub:"BASEBALL BAT CHOKE", subPower:1.04, escape:1.0, ult:"CRUCIFIX", exclusive:true,
     sig:"sig_volley",   sigName:"Musket Volley",      sigDesc:"Fires a musket ball across the battlefield." },
@@ -297,6 +298,7 @@ function setupDummy(){
   P2.cpu = true; P2.tag = "DUMMY";
 }
 function dummyInput(me, op){
+  if (me.inGround) return cpuGroundInput(me);
   const inp = blankInput();
   const mode = DUMMY_MODES[dummyMode];
   if (mode === "FIGHT BACK") return cpuInput(me, op);
@@ -348,7 +350,7 @@ function makeFighter(o){
     dmg:0, stocks:T.stocks, attack:null, atkT:0, fired:false, hitIds:new Set(),
     hitstun:0, knockdown:0, dizzy:0, dodgeT:0, dodgeCD:0, airDodged:false,
     shielding:false, wasShielding:false, shieldHP:T.shieldMax, sigCD:0, downHeld:0,
-    grabbing:null, grabbedBy:null, grabT:0, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null, squeezeT:0, ult:0, scr:null, scrBy:null, sprawlHold:false,
+    grabbing:null, grabbedBy:null, grabT:0, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null, squeezeT:0, ult:0, scr:null, scrBy:null, sprawlHold:false, inGround:false, sprawled:false, gHist:[],
     invuln:0, flash:0, dropT:0, dead:false, respawnT:0, spin:0, ai:{ think:0, plan:null, shieldT:0 } };
 }
 function startGame(){
@@ -361,7 +363,7 @@ function startGame(){
   loadStage(STAGE);
   resetAmbient(); bgShift = 0;
   homeTag = STAGE.owner === P1.name ? P1 : STAGE.owner === P2.name ? P2 : null;
-  parts.length = 0; projs.length = 0; floats.length = 0; cine = null;
+  parts.length = 0; projs.length = 0; floats.length = 0; cine = null; grd = null;
   winner = null; paused = false; hitstop = 0; shake = 0; playTime = 0;
   state = "playing";
   sfx("start");
@@ -396,6 +398,8 @@ function updateFighter(f, inp, dt){
   f.landT = Math.max(0, f.landT - dt);
   if (!f.shielding) f.shieldHP = Math.min(T.shieldMax, f.shieldHP + T.shieldRegen * dt);
 
+  if (f.inGround) return;                                 // the ground game controls them
+  if (f.knockdown <= 0) f.sprawled = false;
   if (f.scrBy){                                           // scramble: mash to reverse
     f.shielding = false;
     if (inp.lightP || inp.heavyP){ f.scrBy.scr.m -= T.scrPress * f.stats.escape; f.squeezeT = 0.1; }
@@ -557,11 +561,11 @@ function hitbox(f){
 }
 function checkHits(a, b){
   const hb = hitbox(a);
-  if (!hb || b.dead || b.grabbedBy || b.thrownBy || b.throwing || b.subbedBy || b.subbing || b.scr || b.scrBy || a.hitIds.has(b)) return;
+  if (!hb || b.dead || b.grabbedBy || b.thrownBy || b.throwing || b.subbedBy || b.subbing || b.scr || b.scrBy || b.inGround || a.inGround || a.hitIds.has(b)) return;
   if (!overlap(hb, body(b))) return;
   const A = hb.A;
   if (A.grab){
-    if (b.knockdown > 0 && b.onGround && !b.invuln){ a.hitIds.add(b); startSub(a, b); return; }   // pinned → submit
+    if (b.knockdown > 0 && b.onGround && !b.invuln){ a.hitIds.add(b); startGround(a, b, b.sprawled ? 2 : 1); return; }   // pinned → ground game
     if (b.invuln > 0 || b.dodgeT > 0 || !b.onGround || b.grabbing) return;
     a.hitIds.add(b); a.attack = null; a.grabbing = b; a.grabT = 0; b.facing = -a.facing;
     sparks(a.x + a.facing * 30, a.y - 50, "#FFFFFF", 8, 180); hitstop = 0.05; sfx("grab");
@@ -625,7 +629,7 @@ function sprawl(f, v){                                              // takedown 
   f.grabbing = null; v.grabbedBy = null; v.sprawlHold = false;
   popText("SPRAWL!", v.x, v.y - 150, v.color); sfx("slam");
   shake = Math.max(shake, 9); hitstop = 0.07; sparks(f.x, f.y, "#C8B08A", 16, 260);
-  f.knockdown = 0.75; f.onGround = true; f.vx = f.vy = 0; f.attack = null; f.hitstun = 0;
+  f.knockdown = 0.75; f.onGround = true; f.vx = f.vy = 0; f.attack = null; f.hitstun = 0; f.sprawled = true;
   v.facing = f.x >= v.x ? 1 : -1;
   v.ult = Math.min(T.ultMax, v.ult + 8);
 }
@@ -685,6 +689,165 @@ function updateThrow(f, dt){
   }
   if (k >= 1) finishThrow(f);
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  GROUND GAME — positions + simultaneous picks (rock-paper-scissors with BJJ logic)
+// ═══════════════════════════════════════════════════════════════
+const POS = ["GUARD", "HALF GUARD", "SIDE CONTROL", "MOUNT", "BACK"];
+const TOPN = { light:"ADVANCE", heavy:"POUND", grab:"SUBMIT" };
+const BOTN = { light:"SWEEP", heavy:"ESCAPE", grab:"DEFEND" };
+const GOUT = { light:{ light:"bot", heavy:"top", grab:"tie" }, heavy:{ light:"tie", heavy:"bot", grab:"top" }, grab:{ light:"top", heavy:"tie", grab:"bot" } };
+const BOT_OK = [1.0, 0.85, 0.7, 0.55, 0.45];          // a "won" sweep/escape/defend succeeds this often, by position
+const POS_SUB = [0, 6, 12, 18, 26];                    // submission meter head start, by position
+const TOP_OFF = [42, 30, 18, 0, -16];
+const TOP_POSE = [{ lean:0.12, sy:0.86 }, { lean:0.35, sy:0.82 }, { lean:0.85, sy:0.78 }, { lean:0.04, sy:0.74 }, { lean:0.2, sy:0.8 }];
+let grd = null, grdSeq = 0;
+function startGround(top, bot, pos){
+  top.attack = null; bot.attack = null; top.vx = top.vy = bot.vx = bot.vy = 0;
+  bot.knockdown = 0; bot.hitstun = 0; bot.sprawled = false; top.shielding = bot.shielding = false;
+  top.inGround = bot.inGround = true; top.onGround = bot.onGround = true; top.y = bot.y;
+  grd = { top, bot, pos, phase:"pick", t:0, pTop:null, pBot:null, ex:0, res:"", show:null, end:null, seq:++grdSeq,
+          dir: Math.sign(bot.x - top.x) || top.facing };
+  sfx("grab"); hitstop = 0.06;                                   // the ground panel announces the position
+}
+function placeGround(){
+  const g = grd, top = g.top, bot = g.bot, w = g.phase === "pick" ? Math.sin(g.t * 10) * 0.03 : 0;
+  top.x = bot.x - g.dir * TOP_OFF[g.pos]; top.y = bot.y; top.facing = g.dir; bot.facing = -g.dir;
+  top.vx = top.vy = bot.vx = bot.vy = 0;
+  const tp = TOP_POSE[g.pos];
+  top.pose = { lean: tp.lean + w, sy: tp.sy };
+  bot.pose = { rot: -Math.PI / 2 * (g.pos === 4 ? 0.35 : 1), pivot:"feet" };
+}
+function updateGround(dt, i1, i2){
+  const g = grd; g.t += dt; placeGround();
+  if (g.phase === "pick"){
+    for (const [f, key] of [[g.top, "pTop"], [g.bot, "pBot"]]){
+      if (g[key]) continue;
+      const inp = f === P1 ? i1 : i2;
+      const pk = inp.lightP ? "light" : inp.heavyP ? "heavy" : inp.grabP ? "grab" : null;
+      if (pk){ g[key] = pk; playSfx("ui"); }
+    }
+    if ((g.pTop && g.pBot) || g.t >= T.gPick){ g.pTop = g.pTop || "light"; g.pBot = g.pBot || "grab"; resolveGround(); }
+  } else if (g.t >= T.gShow){
+    if (g.end) finishGround(g.end);
+    else { g.phase = "pick"; g.t = 0; g.pTop = g.pBot = null; g.show = null; g.res = ""; g.seq = ++grdSeq; }
+  }
+}
+function gDamage(f, d){
+  f.dmg += d; f.flash = 0.12; shake = Math.max(shake, 5);
+  sparks(f.x, f.y - 20, "#FFE9B0", 8, 240); sfx("hit", Math.min(1, 0.3 + d / 20));
+}
+function resolveGround(){
+  const g = grd, tp = g.pTop, bp = g.pBot;
+  g.top.gHist.push(tp); g.bot.gHist.push(bp);
+  let o = GOUT[tp][bp], stuffed = false;
+  if (o === "bot" && Math.random() > BOT_OK[g.pos]){ o = "tie"; stuffed = true; }
+  g.show = { top:TOPN[tp], bot:BOTN[bp], o }; g.phase = "show"; g.t = 0; g.ex++;
+  const top = g.top, bot = g.bot;
+  if (o === "top"){
+    top.ult = Math.min(T.ultMax, top.ult + 4);
+    if (tp === "light"){ if (g.pos < 4){ g.pos++; g.res = "PASS → " + POS[g.pos]; sfx("grab"); } else { gDamage(bot, 6); g.res = "CONTROL  +6%"; } }
+    else if (tp === "heavy"){ const d = 6 + 2 * g.pos; gDamage(bot, d); g.res = "GROUND & POUND  +" + d + "%"; }
+    else { g.end = { kind:"sub", bonus:POS_SUB[g.pos] + 10 }; g.res = top.stats.sub + "!"; }
+  } else if (o === "bot"){
+    bot.ult = Math.min(T.ultMax, bot.ult + 4);
+    if (bp === "light"){
+      if (g.pos <= 1){ g.top = bot; g.bot = top; g.dir = -g.dir; g.pos = 1; g.res = "SWEEP!"; sfx("throw"); }
+      else { g.pos = Math.max(0, g.pos - 2); g.res = "RECOVERED → " + POS[g.pos]; sfx("escape"); }
+    }
+    else if (bp === "heavy"){ g.end = { kind:"escape" }; g.res = "ESCAPED!"; sfx("escape"); }
+    else { g.pos = Math.max(0, g.pos - 1); bot.ult = Math.min(T.ultMax, bot.ult + 4); g.res = "BLOCKED → " + POS[g.pos]; sfx("block"); }
+  } else {
+    if (tp === "grab" && bp === "heavy"){ g.end = { kind:"sub", bonus:POS_SUB[g.pos] }; g.res = top.stats.sub + "!"; }
+    else if (tp === "heavy" && bp === "light"){ gDamage(bot, 3); g.res = "SCRAMBLE  +3%"; }
+    else { g.res = stuffed ? "STUFFED!" : "STALEMATE"; sfx("armor"); }
+  }
+  if (!g.end && g.ex >= T.gMaxEx){ g.end = { kind:"standup" }; g.res += "  ·  STAND UP!"; }
+}
+function finishGround(end){
+  const g = grd, top = g.top, bot = g.bot; grd = null;
+  top.inGround = bot.inGround = false; top.pose = bot.pose = null;
+  if (end.kind === "sub"){
+    bot.onGround = true; startSub(top, bot);
+    if (top.subbing) top.subbing.meter = Math.min(95, top.subbing.meter + end.bonus);
+  } else {
+    const d = bot.x >= top.x ? 1 : -1;
+    bot.vx = d * 320; top.vx = -d * 320; bot.vy = top.vy = -260; bot.onGround = top.onGround = false;
+    bot.invuln = top.invuln = 0.4;
+    startAttack(top, "throwLag");
+  }
+}
+function endGroundSilently(f){
+  if (!grd || (grd.top !== f && grd.bot !== f)) return;
+  grd.top.inGround = grd.bot.inGround = false; grd.top.pose = grd.bot.pose = null; grd = null;
+}
+function cpuGroundPick(me){
+  const g = grd, top = g.top === me, pos = g.pos, opp = top ? g.bot : g.top;
+  if (settings.cpu === "hard" && opp.gHist.length >= 3 && Math.random() < 0.4){   // reads your habits
+    const c = {}; opp.gHist.slice(-6).forEach(x => c[x] = (c[x] || 0) + 1);
+    const fav = Object.keys(c).sort((a, b) => c[b] - c[a])[0];
+    if (top) return { light:"grab", heavy:"light", grab:"heavy" }[fav];         // counter their bottom habit
+    return fav;                                                                  // bottom: SWEEP beats ADVANCE, ESCAPE beats POUND, DEFEND beats SUBMIT
+  }
+  const w = top ? { light:0.45, heavy:0.3, grab:0.25 } : { light: pos <= 1 ? 0.45 : 0.25, heavy:0.35, grab:0.3 };
+  if (top && opp.dmg > 70) w.grab += 0.2;
+  if (top && pos >= 3) w.grab += 0.15;
+  if (!top && pos >= 3) w.grab += 0.15;
+  let r = Math.random() * (w.light + w.heavy + w.grab);
+  for (const k of ["light", "heavy", "grab"]){ r -= w[k]; if (r <= 0) return k; }
+  return "light";
+}
+function cpuGroundInput(me){
+  const inp = blankInput();
+  if (!grd || grd.phase !== "pick") return inp;
+  if (me.ai.gSeq !== grd.seq){ me.ai.gSeq = grd.seq; me.ai.gAt = 0.3 + Math.random() * 0.8; me.ai.gChoice = cpuGroundPick(me); }
+  if (grd.t >= me.ai.gAt) inp[me.ai.gChoice + "P"] = true;
+  return inp;
+}
+function drawGroundPanel(){
+  const g = grd, top = g.top, bot = g.bot, sc = IS_TOUCH ? 1.35 : 1;
+  const cx = Math.max(230 * sc, Math.min(W - 230 * sc, (top.x + bot.x) / 2)), py = Math.max(IS_TOUCH ? 64 : 70, bot.y - 250 - (sc - 1) * 128), pw = 440, ph = 128, x = cx - pw / 2;
+  ctx.save(); ctx.translate(cx, py); ctx.scale(sc, sc); ctx.translate(-cx, -py);
+  drawGroundPanelInner(g, top, bot, cx, py, pw, ph, x);
+  ctx.restore();
+}
+function drawGroundPanelInner(g, top, bot, cx, py, pw, ph, x){
+  ctx.fillStyle = "rgba(11,14,19,0.92)"; roundRect(x, py, pw, ph, 14); ctx.fill();
+  ctx.strokeStyle = top.color; ctx.lineWidth = 2; roundRect(x, py, pw, ph, 14); ctx.stroke();
+  // position ladder
+  const short = ["GUARD", "HALF", "SIDE", "MOUNT", "BACK"], step = (pw - 40) / 5;
+  short.forEach((nm, i) => {
+    const on = i === g.pos, bx = x + 20 + i * step;
+    ctx.fillStyle = on ? top.color : "rgba(255,255,255,0.08)"; roundRect(bx + 2, py + 10, step - 4, 22, 11); ctx.fill();
+    ctx.fillStyle = on ? "#14181F" : "#8B95A3"; ctx.font = "900 11px system-ui"; ctx.textAlign = "center"; ctx.fillText(nm, bx + step / 2, py + 25);
+  });
+  ctx.textAlign = "center";
+  if (g.phase === "pick"){
+    const k = Math.max(0, 1 - g.t / T.gPick);
+    ctx.fillStyle = "rgba(255,255,255,0.1)"; ctx.fillRect(x + 20, py + 40, pw - 40, 5);
+    ctx.fillStyle = k < 0.3 ? "#FF6A4A" : "#FFD36A"; ctx.fillRect(x + 20, py + 40, (pw - 40) * k, 5);
+    const lock = (f, picked) => (f.cpu ? f.name : f.tag + " " + f.name) + (picked ? "  ✓ LOCKED" : "  · choosing…");
+    ctx.font = "bold 13px system-ui";
+    ctx.fillStyle = top.color; ctx.fillText("TOP: " + lock(top, !!g.pTop), cx, py + 66);
+    ctx.fillStyle = bot.color; ctx.fillText("BOTTOM: " + lock(bot, !!g.pBot), cx, py + 86);
+    // what each of YOUR buttons does right now
+    const mine = [P1, P2].filter(f => !f.cpu && (!online || (net && (net.role === "host" ? f === P1 : f === P2))));
+    const lines = mine.map(f => {
+      const isTop = f === top, N = isTop ? TOPN : BOTN, K = online || f === P1 ? P1KEYS : P2KEYS;
+      const lab = a => IS_TOUCH ? { light:"LIGHT", heavy:"HEAVY", grab:"GRAB" }[a] : keyLabel(K[a]);
+      return (mine.length > 1 ? f.tag + " " : "") + lab("light") + " " + N.light + " · " + lab("heavy") + " " + N.heavy + " · " + lab("grab") + " " + N.grab;
+    });
+    ctx.fillStyle = "#B7BFC9"; ctx.font = "12px system-ui";
+    lines.forEach((ln, i) => ctx.fillText(ln, cx, py + 106 + i * 15));
+  } else if (g.show){
+    ctx.font = "900 22px system-ui"; ctx.fillStyle = g.show.o === "top" ? top.color : g.show.o === "bot" ? bot.color : "#EDEFF2";
+    ctx.fillText(g.res, cx, py + 66);
+    ctx.font = "bold 13px system-ui"; ctx.fillStyle = "#B7BFC9";
+    const tn = g.show.o === "bot" && g.res === "SWEEP!" ? bot : top, bn = tn === top ? bot : top;
+    ctx.fillText(tn.name + ": " + g.show.top + "   vs   " + bn.name + ": " + g.show.bot, cx, py + 92);
+  }
+}
+
 // ─── Ultimate cinematic ───
 let cine = null, impactFlash = 0;
 function startCine(a, b){
@@ -813,7 +976,7 @@ function updateProjs(dt){
     const p = projs[i]; p.x += p.vx * dt; p.life -= dt;
     let hit = false;
     for (const b of [P1, P2]){
-      if (b === p.owner || b.dead || b.invuln > 0 || b.grabbedBy || b.thrownBy || b.throwing || b.subbedBy || b.subbing || b.scr || b.scrBy) continue;
+      if (b === p.owner || b.dead || b.invuln > 0 || b.grabbedBy || b.thrownBy || b.throwing || b.subbedBy || b.subbing || b.scr || b.scrBy || b.inGround) continue;
       const bb = body(b);
       if (p.x > bb.x - 14 && p.x < bb.x + bb.w + 14 && p.y > bb.y && p.y < bb.y + bb.h){
         const dir = Math.sign(p.vx);
@@ -837,6 +1000,7 @@ function releaseGrabs(f){
   if (f.subbedBy){ f.subbedBy.subbing = null; f.subbedBy.pose = null; f.subbedBy = null; }
   if (f.scr){ f.scr.v.scrBy = null; f.scr.v.pose = null; f.scr = null; }
   if (f.scrBy){ f.scrBy.scr = null; f.scrBy.pose = null; f.scrBy = null; }
+  endGroundSilently(f);
   f.pose = null;
 }
 function KO(f){
@@ -858,7 +1022,7 @@ function KO(f){
 function respawn(f){
   Object.assign(f, { dead:false, x: W/2 + (f === P1 ? -80 : 80), y:120, vx:0, vy:0, dmg:(practice && f === P2) ? DUMMY_DMG[dummyDmgIdx] : 0, invuln:T.respawnInvuln,
     attack:null, hitstun:0, knockdown:0, dizzy:0, jumps:f.stats.jumps, dodgeT:0, onGround:false,
-    shielding:false, shieldHP:T.shieldMax, sigCD:0, grabbing:null, grabbedBy:null, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null, scr:null, scrBy:null, sprawlHold:false });
+    shielding:false, shieldHP:T.shieldMax, sigCD:0, grabbing:null, grabbedBy:null, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null, scr:null, scrBy:null, sprawlHold:false, inGround:false, sprawled:false });
 }
 
 // ─── CPU opponent (beatable on purpose — has reaction delay) ───
@@ -881,6 +1045,7 @@ function sigInRange(sig, adx, ady, me, dx){
 function cpuInput(me, op){
   const inp = blankInput();
   if (me.dead || op.dead) return inp;
+  if (me.inGround) return cpuGroundInput(me);
   if (!me.grabbedBy) me.ai.inGrab = false;
   if (me.grabbedBy){                                                      // read the takedown? hold down to sprawl
     if (!me.ai.inGrab){ me.ai.inGrab = true; me.ai.sprawl = Math.random() < ({ easy:0.12, normal:0.3, hard:0.45 }[settings.cpu]); }
@@ -1224,6 +1389,7 @@ function stepCore(dt){
   updatePlats(dt);
   const i1 = merge(merge(keyInput(P1.keys), padInput(0)), touchInput());
   const i2 = online ? takeRemoteInput() : practice ? dummyInput(P2, P1) : P2.cpu ? cpuInput(P2, P1) : merge(keyInput(P2.keys), padInput(1));
+  if (grd) updateGround(dt, i1, i2);
   updateFighter(P1, i1, dt);
   updateFighter(P2, i2, dt);
   checkHits(P1, P2); checkHits(P2, P1);
@@ -1619,7 +1785,7 @@ function drawFighter(f){
   const otherTop = other ? other.y - (LOOK[other.stats.key] || { h:other.h }).h : topY;
   const tagY = crowded ? Math.min(topY, otherTop) - 12 - (f === P2 ? 18 : 0) : topY - 12;
   ctx.fillStyle = f.color; ctx.font = "bold 13px system-ui"; ctx.textAlign = "center";
-  if (!f.subbing && !f.subbedBy && !f.scr && !f.scrBy){             // dark outline keeps tags readable on bright stages
+  if (!f.subbing && !f.subbedBy && !f.scr && !f.scrBy && !f.inGround){             // dark outline keeps tags readable on bright stages
     ctx.lineWidth = 4; ctx.strokeStyle = "rgba(11,14,19,0.9)"; ctx.lineJoin = "round";
     ctx.strokeText(f.tag + " " + f.name, f.x, tagY); ctx.fillText(f.tag + " " + f.name, f.x, tagY);
   }
@@ -1663,7 +1829,7 @@ function drawFighter(f){
     const hy = f.y - 150;
     ctx.fillStyle = "rgba(11,14,19,0.88)"; roundRect(f.x - 100, hy - 17, 200, 26, 13); ctx.fill();
     ctx.fillStyle = "#C9A15A"; ctx.font = "900 13px system-ui";
-    ctx.fillText(IS_TOUCH ? "TAP GRAB TO SUBMIT!" : keyLabel((online || other === P1 ? P1KEYS : P2KEYS).grab) + " — GRAB TO SUBMIT!", f.x, hy + 1);
+    ctx.fillText(IS_TOUCH ? "TAP GRAB → GROUND GAME" : keyLabel((online || other === P1 ? P1KEYS : P2KEYS).grab) + " — GRAB → GROUND GAME", f.x, hy + 1);
   }
   if (f.grabbing && !f.cpu){
     const hx = (f.x + f.grabbing.x) / 2, hy = topY - 52;
@@ -1767,11 +1933,11 @@ function drawMenu(){
     uiBtn(W - 214, 14, 200, 44, "? HOW TO PLAY", () => { howto = true; }, { size:16 });
     centerText("Left thumb: joystick (anywhere on the left)  ·  Right thumb: buttons", 590, 15, "#8B95A3", "normal");
     centerText("ATTACK beats GRAB · GRAB beats SHIELD · SHIELD beats ATTACK", 622, 16, "#C9A15A");
-    centerText("Takedown (GRAB, stick down), then GRAB the pinned opponent to SUBMIT", 650, 14, "#B7BFC9", "normal");
+    centerText("Takedown (GRAB, stick down), then GRAB the pinned opponent to go to the GROUND", 650, 14, "#B7BFC9", "normal");
     return;
   }
   centerText("ROLLWARRIORS", 190, 64, "#C9A15A");
-  centerText("BRAWL · GAMEPLAY PROTOTYPE v18", 228, 18, "#8B95A3");
+  centerText("BRAWL · GAMEPLAY PROTOTYPE v19", 228, 18, "#8B95A3");
   centerText("Press 1 — vs CPU", 310, 26, "#EDEFF2");
   centerText("Press 2 — 2 Players (same keyboard)", 352, 26, "#EDEFF2");
   centerText("3 — Settings     ·     4 — Practice     ·     5 — ONLINE", 394, 20, "#C9A15A");
@@ -1783,7 +1949,7 @@ function drawMenu(){
   centerText("Controller: stick move · A jump · X light · B heavy · Y signature · LB grab · RB/LT shield · RT ultimate", 520, 15, "#B7BFC9", "normal");
   centerText("ATTACK beats GRAB · GRAB beats SHIELD · SHIELD beats ATTACK", 568, 18, "#C9A15A");
   centerText("Grab, then a direction to throw: → Double Leg · ← Hip Throw · ↑ Suplex · ↓ Takedown", 594, 15, "#B7BFC9", "normal");
-  centerText("After a TAKEDOWN, GRAB the pinned opponent to SUBMIT them — mash to finish, mash to escape!", 618, 15, "#C9A15A", "normal");
+  centerText("After a TAKEDOWN, GRAB the pinned opponent → GROUND GAME: climb positions, pound, or submit!", 618, 15, "#C9A15A", "normal");
 
 }
 function wrap(text, x, y, maxW, lineH){
@@ -1963,7 +2129,7 @@ function drawMoveList(){
     ["GRAB", "grab (beats shields)"],
     ["GRAB, stick →", "Double Leg"], ["GRAB, stick ←", "Hip Throw"],
     ["GRAB, stick ↑", "Suplex"], ["GRAB, stick ↓", "Takedown → pins them"],
-    ["GRAB on pinned", "submit: " + S.sub + " (mash LIGHT)"],
+    ["GRAB on pinned", "ground game → " + S.sub],
     ["ULTIMATE", ""],
     ["ULT (glowing)", S.ult + " — taps at 80%+"],
   ] : (() => { const K = P1KEYS, k = keyLabel; return [
@@ -1979,7 +2145,7 @@ function drawMoveList(){
     [k(K.grab), "grab (beats shields)"],
     [k(K.grab) + " then →/←", "Double Leg / Hip Throw"],
     [k(K.grab) + " then ↑/↓", "Suplex / Takedown"],
-    [k(K.grab) + " on pinned", "submit: " + S.sub + " (mash " + k(K.light) + ")"],
+    [k(K.grab) + " on pinned", "ground game → " + S.sub],
     ["ULTIMATE", ""],
     [k(K.ult) + " (bar full)", "★ " + S.ult + " — taps at 80%+"],
   ]; })();
@@ -2093,13 +2259,14 @@ function drawInner(){
   drawAmbient(false);
   if (STAGE.key === "viking") drawWater(false);
   drawStage();
-  const onTop = f => !!(f.subbing || f.throwing || f.grabbing);      // whoever is in control is drawn in front
+  const onTop = f => !!(f.subbing || f.throwing || f.grabbing || (grd && grd.top === f));      // whoever is in control is drawn in front
   if (onTop(P1) && !onTop(P2)){ drawFighter(P2); drawFighter(P1); } else { drawFighter(P1); drawFighter(P2); }
   drawProjs(); drawParticles();
   if (practice && showBoxes) drawBoxes();
   drawAmbient(true);
   if (STAGE.key === "viking") drawWater(true);
   drawVignette();
+  if (grd) drawGroundPanel();
   drawFloats();
   drawOffscreen(P1); drawOffscreen(P2);
   ctx.restore();
@@ -2240,8 +2407,10 @@ function drawTouchFight(){
     }
     ctx.fillStyle = fill; ctx.strokeStyle = edge; ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = txt; ctx.textAlign = "center"; ctx.font = `900 ${b.label.length > 4 ? 13 : 16}px system-ui`;
-    ctx.fillText(b.label, b.x, b.y + 5);
+    let lbl = b.label;
+    if (grd && me && me.inGround && (k === "light" || k === "heavy" || k === "grab")) lbl = (grd.top === me ? TOPN : BOTN)[k];
+    ctx.fillStyle = txt; ctx.textAlign = "center"; ctx.font = `900 ${lbl.length > 4 ? 13 : 16}px system-ui`;
+    ctx.fillText(lbl, b.x, b.y + 5);
   }
   ctx.globalAlpha = 1;
   // pause / leave
@@ -2276,7 +2445,7 @@ function drawHowTo(){
     ["Knock your opponent off the stage. The higher their %, the further they fly.", "#EDEFF2"],
     ["ATTACK beats GRAB  ·  GRAB beats SHIELD  ·  SHIELD beats ATTACK", "#C9A15A"],
     ["GRAB, then push the stick to throw:  → Double Leg  ·  ← Hip Throw  ·  ↑ Suplex  ·  ↓ Takedown", "#B7BFC9"],
-    ["After a Takedown, tap GRAB on the pinned opponent to SUBMIT them, then mash LIGHT", "#B7BFC9"],
+    ["After a Takedown, tap GRAB on the pinned opponent → GROUND GAME (Light/Heavy/Grab pick your move)", "#B7BFC9"],
     ["Fill the ULT bar by fighting, then tap ULT for your Ultimate", "#B7BFC9"],
   ];
   rules.forEach(([t, c], i) => centerText(t, 108 + i * 30, i === 1 ? 17 : 15, c, i === 1 ? "bold" : "normal"));
@@ -2579,7 +2748,7 @@ const ref = f => f === P1 ? 1 : f === P2 ? 2 : 0;
 const deref = n => n === 1 ? P1 : n === 2 ? P2 : null;
 const SYNC_F = ["x","y","vx","vy","facing","onGround","dmg","stocks","attack","atkT","hitstun","knockdown","dizzy","dodgeT","invuln","flash",
   "shielding","shieldHP","sigCD","ult","dead","respawnT","spin","landT","squeezeT","pose","grabT","jumps",
-  "dodgeCD","airDodged","dropT","downHeld","wasShielding","fired","sprawlHold"];
+  "dodgeCD","airDodged","dropT","downHeld","wasShielding","fired","sprawlHold","inGround","sprawled"];
 function serF(f){
   const o = {}; for (const k of SYNC_F) o[k] = f[k];
   o.gb = ref(f.grabbing); o.gd = ref(f.grabbedBy); o.tb = ref(f.thrownBy); o.sb = ref(f.subbedBy);
@@ -2603,7 +2772,8 @@ function hostSnapshot(){
     cine: cine ? { a:ref(cine.a), b:ref(cine.b), t:cine.t, dur:cine.dur } : null,
     pr: projs.map(p => [Math.round(p.x), Math.round(p.y), p.vx, ref(p.owner), p.ak]),
     pl: PLATS.filter(p => p.move).map(p => [p.x, p.t]),
-    f1: serF(P1), f2: serF(P2) };
+    f1: serF(P1), f2: serF(P2),
+    gd: grd ? { t:ref(grd.top), b:ref(grd.bot), pos:grd.pos, ph:grd.phase, tm:grd.t, lt:!!grd.pTop, lb:!!grd.pBot, sh:grd.show, res:grd.res, ex:grd.ex, dir:grd.dir, seq:grd.seq } : null };
 }
 function applySnapshot(m){
   if (!P1 || !P2) return;
@@ -2615,6 +2785,8 @@ function applySnapshot(m){
   projs.length = 0;
   for (const [x, y, vx, o, ak] of m.pr) projs.push({ x, y, vx, owner:deref(o), A:ATTACKS[ak], ak, life:1 });
   PLATS.filter(p => p.move).forEach((p, i) => { if (m.pl[i]){ p.x = m.pl[i][0]; p.t = m.pl[i][1]; } });
+  grd = m.gd ? { top:deref(m.gd.t), bot:deref(m.gd.b), pos:m.gd.pos, phase:m.gd.ph, t:m.gd.tm, pTop:m.gd.lt ? "x" : null, pBot:m.gd.lb ? "x" : null,
+                 show:m.gd.sh, res:m.gd.res, ex:m.gd.ex, dir:m.gd.dir, seq:m.gd.seq } : null;
   if (m.st === "over" && state !== "over"){ winner = deref(m.w); state = "over"; }
 }
 function handleGame(m){
