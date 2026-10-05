@@ -355,12 +355,14 @@ function startGame(){
   winner = null; paused = false; hitstop = 0; shake = 0; playTime = 0;
   state = "playing";
   sfx("start");
+  if (IS_TOUCH && !online && !howtoSeen()){ howto = true; paused = true; }
 }
 function goSelect(){ pick.p1ok = false; pick.p2ok = false; state = "select"; }
 const approach = (v, t, amt) => v < t ? Math.min(v + amt, t) : Math.max(v - amt, t);
 const atk = f => f.attack ? ATTACKS[f.attack] : null;
 function hasArmor(f){ const A = atk(f); return !!(A && A.armor && f.atkT < A.startup + A.active); }
-function popText(text, x, y, color){ floats.push({ text, x, y, color, life:0.9 }); if (isHost()) net.ev.push(["p", text, Math.round(x), Math.round(y), color]); }
+let quiet = false;                                               // true while the guest predicts its own warrior
+function popText(text, x, y, color){ if (quiet) return; floats.push({ text, x, y, color, life:0.9 }); if (isHost()) net.ev.push(["p", text, Math.round(x), Math.round(y), color]); }
 
 function startAttack(f, name){
   f.attack = name; f.atkT = 0; f.fired = false; f.hitIds = new Set();
@@ -654,6 +656,7 @@ function updateThrow(f, dt){
 // ─── Ultimate cinematic ───
 let cine = null, impactFlash = 0;
 function startCine(a, b){
+  if (quiet) return;
   releaseGrabs(a); releaseGrabs(b);
   a.attack = null; a.vx = a.vy = 0; b.vx = b.vy = 0; b.shielding = false; b.attack = null;
   cine = { a, b, t:0, dur:T.cineTime }; sfx("cineHit");
@@ -728,6 +731,7 @@ function finishThrow(f){
   startAttack(f, "throwLag");
 }
 function spawnArrow(f, A){
+  if (quiet) return;                                                // only the host creates projectiles
   if (A.projKind === "ball"){                                        // musket: muzzle flash + smoke
     const mx = f.x + f.facing * 70, my = f.y - 58;
     projs.push({ x:mx, y:my, vx:f.facing * A.speed, owner:f, A, ak:f.stats.sig, life:1.0 });
@@ -766,6 +770,7 @@ function releaseGrabs(f){
   f.pose = null;
 }
 function KO(f){
+  if (quiet) return;                                                // only the host decides KOs
   releaseGrabs(f);
   sfx("ko");
   if (practice){
@@ -959,6 +964,7 @@ function playSfx(name, a){
   try { SFX[name](a); } catch(e){}
 }
 function sfx(name, a){                                           // play it, and send it to an online guest
+  if (quiet) return;
   if (typeof isHost === "function" && isHost()) net.ev.push(["a", name, a]);
   playSfx(name, a);
 }
@@ -968,6 +974,7 @@ if (typeof window !== "undefined" && window.addEventListener){
 
 // ─── Particles & floating text ───
 function sparks(x, y, color, n, speed){
+  if (quiet) return;
   if (isHost()) net.ev.push(["s", Math.round(x), Math.round(y), color, n, speed]);
   sparksLocal(x, y, color, n, speed);
 }
@@ -1547,7 +1554,7 @@ function drawFighter(f){
     ctx.fillStyle = k > 0.8 ? "#FF4A4A" : f.color; roundRect(mx - bw/2, my - 4, bw * k, 12, 6); ctx.fill();
     ctx.fillStyle = "#FFFFFF"; ctx.fillRect(mx - bw/2 + bw - 2, my - 7, 3, 18);
     ctx.font = "bold 11px system-ui"; ctx.fillStyle = "#B7BFC9";
-    const key = p => p === P1 ? "F" : "K";
+    const key = p => IS_TOUCH ? "LIGHT" : online ? "F" : p === P1 ? "F" : "K";
     const lines = [];
     if (!f.cpu) lines.push(f.tag + ": MASH " + key(f) + " TO FINISH");
     if (!v.cpu) lines.push(v.tag + ": MASH " + key(v) + " TO ESCAPE");
@@ -1555,15 +1562,15 @@ function drawFighter(f){
   }
   if (f.knockdown > 0 && f.onGround && !f.subbedBy && other && !other.cpu && !other.dead){
     const hy = f.y - 150;
-    ctx.fillStyle = "rgba(11,14,19,0.88)"; roundRect(f.x - 78, hy - 17, 156, 26, 13); ctx.fill();
+    ctx.fillStyle = "rgba(11,14,19,0.88)"; roundRect(f.x - 100, hy - 17, 200, 26, 13); ctx.fill();
     ctx.fillStyle = "#C9A15A"; ctx.font = "900 13px system-ui";
-    ctx.fillText((other === P1 ? "R" : "I") + " — GRAB TO SUBMIT!", f.x, hy + 1);
+    ctx.fillText(IS_TOUCH ? "TAP GRAB TO SUBMIT!" : (online || other === P1 ? "R" : "I") + " — GRAB TO SUBMIT!", f.x, hy + 1);
   }
   if (f.grabbing && !f.cpu){
     const hx = (f.x + f.grabbing.x) / 2, hy = topY - 52;
     ctx.fillStyle = "rgba(11,14,19,0.85)"; roundRect(hx - 92, hy - 17, 184, 26, 13); ctx.fill();
     ctx.fillStyle = "#C9A15A"; ctx.font = "bold 13px system-ui";
-    ctx.fillText("THROW   ←  →  ↑  ↓", hx, hy + 1);
+    ctx.fillText(IS_TOUCH ? "PUSH STICK TO THROW" : "THROW   ←  →  ↑  ↓", hx, hy + 1);
   }
 }
 function drawProjs(){
@@ -1657,14 +1664,15 @@ function drawMenu(){
     centerText("ROLLWARRIORS", 130, 60, "#C9A15A");
     centerText("BRAWL", 168, 18, "#8B95A3");
     const items = [["VS CPU","1",true],["ONLINE","5",true],["PRACTICE","4",false],["SETTINGS","3",false]];
-    items.forEach(([lb, key, gold], i) => uiBtn(W/2 - 170, 210 + i * 86, 340, 66, lb, () => pressed.add(key), { gold, size:24 }));
+    items.forEach(([lb, key, gold], i) => uiBtn(W/2 - 170, 200 + i * 80, 340, 62, lb, () => pressed.add(key), { gold, size:24 }));
+    uiBtn(W - 214, 14, 200, 44, "? HOW TO PLAY", () => { howto = true; }, { size:16 });
     centerText("Left thumb: joystick (anywhere on the left)  ·  Right thumb: buttons", 590, 15, "#8B95A3", "normal");
     centerText("ATTACK beats GRAB · GRAB beats SHIELD · SHIELD beats ATTACK", 622, 16, "#C9A15A");
     centerText("Takedown (GRAB, stick down), then GRAB the pinned opponent to SUBMIT", 650, 14, "#B7BFC9", "normal");
     return;
   }
   centerText("ROLLWARRIORS", 190, 64, "#C9A15A");
-  centerText("BRAWL · GAMEPLAY PROTOTYPE v16", 228, 18, "#8B95A3");
+  centerText("BRAWL · GAMEPLAY PROTOTYPE v17", 228, 18, "#8B95A3");
   centerText("Press 1 — vs CPU", 310, 26, "#EDEFF2");
   centerText("Press 2 — 2 Players (same keyboard)", 352, 26, "#EDEFF2");
   centerText("3 — Settings     ·     4 — Practice     ·     5 — ONLINE", 394, 20, "#C9A15A");
@@ -1819,7 +1827,7 @@ function drawPractice(){
   row("4  Hitboxes", showBoxes ? "ON" : "off", y + 104, showBoxes ? "#5AE68C" : "#5D6673");
   row("5  Dummy is", P2.name, y + 122, P2.color);
   row("6  Move list", showMoves ? "ON" : "off", y + 140, showMoves ? "#5AE68C" : "#5D6673");
-  ctx.fillStyle = "#5D6673"; ctx.font = "11px system-ui"; ctx.fillText("7 — fill your ultimate  ·  Esc — back to menu", x + 14, y + 162);
+  ctx.fillStyle = "#5D6673"; ctx.font = "11px system-ui"; ctx.fillText(IS_TOUCH ? "Use the buttons along the top" : "7 — fill your ultimate  ·  Esc — back to menu", x + 14, y + 162);
   // last hit + frame data
   if (lastHit){
     ctx.fillStyle = "#EDEFF2"; ctx.font = "bold 12px system-ui";
@@ -1840,7 +1848,24 @@ function drawPractice(){
 }
 function drawMoveList(){
   const S = P1.stats, x = W - 356, y = 16, w = 340;
-  const lines = [
+  const lines = IS_TOUCH ? [
+    ["MOVEMENT", ""],
+    ["Stick", "move · aim up / down"],
+    ["JUMP", "jump (x" + S.jumps + ")"],
+    ["Stick down", "fast-fall · hold to drop through"],
+    ["SHIELD (hold)", "block · + stick = roll"],
+    ["ATTACKS", ""],
+    ["LIGHT", "light attack"], ["HEAVY", "heavy attack"],
+    ["Stick up + atk", "up light / up heavy"],
+    ["★", S.sigName],
+    ["GRAPPLING", ""],
+    ["GRAB", "grab (beats shields)"],
+    ["GRAB, stick →", "Double Leg"], ["GRAB, stick ←", "Hip Throw"],
+    ["GRAB, stick ↑", "Suplex"], ["GRAB, stick ↓", "Takedown → pins them"],
+    ["GRAB on pinned", "submit: " + S.sub + " (mash LIGHT)"],
+    ["ULTIMATE", ""],
+    ["ULT (glowing)", S.ult + " — taps at 80%+"],
+  ] : [
     ["MOVEMENT", ""],
     ["W / D / A", "jump (x" + S.jumps + ") · move"],
     ["S", "fast-fall · hold to drop through"],
@@ -2026,7 +2051,7 @@ function onTouchStart(e){
   if (!triedFullscreen){ triedFullscreen = true; try { const d = document.documentElement; if (d.requestFullscreen) d.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock("landscape").catch(() => {})).catch(() => {}); } catch(_){} }
   for (const t of e.changedTouches){
     const p = toCanvas(t);
-    const hit = [...ui].reverse().find(u => p.x >= u.x && p.x <= u.x + u.w && p.y >= u.y && p.y <= u.y + u.h);
+    const hit = (howto ? ui.slice(-1) : [...ui].reverse()).find(u => p.x >= u.x && p.x <= u.x + u.w && p.y >= u.y && p.y <= u.y + u.h);
     if (hit){ playSfx("ui"); hit.onTap(); continue; }
     if (!fighting()) continue;
     const b = Object.entries(TB).find(([, v]) => Math.hypot(p.x - v.x, p.y - v.y) <= v.r * 1.18);
@@ -2113,6 +2138,7 @@ function drawTouchFight(){
   }
 }
 function drawTouchOverlays(){
+  if (howto){ drawHowTo(); return; }
   if (state === "playing" && !paused) drawTouchFight();
   if (state === "playing" && paused){
     uiBtn(W/2 - 230, H/2 + 70, 210, 56, "RESUME", () => pressed.add("p"), { gold:true });
@@ -2125,6 +2151,52 @@ function drawTouchOverlays(){
     btns.forEach(([lb, key], i) => uiBtn(x0 + i * (bw + gap), H/2 + 70, bw, 56, lb, () => pressed.add(key), { gold: i === 0 }));
   }
 }
+
+let howto = false;
+function howtoSeen(){ try { return localStorage.getItem("rw_howto_seen") === "1"; } catch(e){ return true; } }
+function closeHowto(){ howto = false; paused = false; try { localStorage.setItem("rw_howto_seen", "1"); } catch(e){} }
+function drawHowTo(){
+  ctx.fillStyle = "#07090C"; ctx.fillRect(0, 0, W, H);
+  centerText("HOW TO PLAY", 62, 40, "#C9A15A");
+  const rules = [
+    ["Knock your opponent off the stage. The higher their %, the further they fly.", "#EDEFF2"],
+    ["ATTACK beats GRAB  ·  GRAB beats SHIELD  ·  SHIELD beats ATTACK", "#C9A15A"],
+    ["GRAB, then push the stick to throw:  → Double Leg  ·  ← Hip Throw  ·  ↑ Suplex  ·  ↓ Takedown", "#B7BFC9"],
+    ["After a Takedown, tap GRAB on the pinned opponent to SUBMIT them, then mash LIGHT", "#B7BFC9"],
+    ["Fill the ULT bar by fighting, then tap ULT for your Ultimate", "#B7BFC9"],
+  ];
+  rules.forEach(([t, c], i) => centerText(t, 108 + i * 30, i === 1 ? 17 : 15, c, i === 1 ? "bold" : "normal"));
+  // the stick
+  ctx.fillStyle = "rgba(20,24,31,0.8)"; ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(170, 560, 80, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.beginPath(); ctx.arc(170, 560, 34, 0, Math.PI * 2); ctx.fill();
+  ctx.textAlign = "center"; ctx.fillStyle = "#FFD36A"; ctx.font = "900 16px system-ui"; ctx.fillText("MOVE", 170, 445);
+  ctx.fillStyle = "#B7BFC9"; ctx.font = "13px system-ui"; ctx.fillText("Left thumb, anywhere on the left", 170, 465);
+  ctx.fillText("Aim up / down for up attacks & drop-throughs", 170, 680);
+  // the buttons, each with a numbered badge that matches the list
+  const call = [["ult","ULTIMATE","tap when it glows gold"], ["shield","SHIELD","hold to block · + stick to roll"], ["heavy","HEAVY","slow, strong attack"],
+                ["sig","★ SIGNATURE","your warrior's special move"], ["jump","JUMP","tap again in the air"], ["grab","GRAB","then push the stick to throw"], ["light","LIGHT","fast attack"]];
+  for (const [k, b] of Object.entries(TB)){
+    ctx.fillStyle = k === "ult" ? "rgba(255,211,106,0.85)" : "rgba(20,24,31,0.85)"; ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = k === "ult" ? "#14181F" : "#EDEFF2"; ctx.textAlign = "center"; ctx.font = `900 ${b.label.length > 4 ? 13 : 16}px system-ui`;
+    ctx.fillText(b.label, b.x, b.y + 5);
+  }
+  call.forEach(([k, name, desc], i) => {
+    const b = TB[k], n = String(i + 1), bx = b.x - b.r * 0.72, by = b.y - b.r * 0.72;
+    ctx.fillStyle = "#FFD36A"; ctx.beginPath(); ctx.arc(bx, by, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#14181F"; ctx.font = "900 14px system-ui"; ctx.textAlign = "center"; ctx.fillText(n, bx, by + 5);
+    const lx = 470, ly = 292 + i * 46;
+    ctx.fillStyle = "#FFD36A"; ctx.beginPath(); ctx.arc(lx, ly - 5, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#14181F"; ctx.font = "900 14px system-ui"; ctx.fillText(n, lx, ly);
+    ctx.textAlign = "left"; ctx.fillStyle = "#FFD36A"; ctx.font = "900 16px system-ui"; ctx.fillText(name, lx + 22, ly - 2);
+    ctx.fillStyle = "#B7BFC9"; ctx.font = "13px system-ui"; ctx.fillText(desc, lx + 22, ly + 15);
+  });
+  ctx.globalAlpha = 0.6 + 0.4 * Math.sin(animT * 4);
+  centerText("TAP ANYWHERE TO PLAY", 706, 20, "#FFFFFF", "900"); ctx.globalAlpha = 1;
+  uiArea(0, 0, W, H, closeHowto);
+}
+
 function drawRotateHint(){
   if (!IS_TOUCH || innerHeight <= innerWidth) return;
   ctx.fillStyle = "#0B0E13"; ctx.fillRect(0, 0, W, H);
@@ -2145,6 +2217,8 @@ const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const QS = new URLSearchParams(typeof location !== "undefined" ? location.search : "");
 const LOCAL_TEST = QS.get("localtest") === "1";          // two tabs on one computer, no internet needed
 const FORCE_RELAY = QS.get("relay") === "1";
+const SIM_LAG = +(QS.get("lag") || 0);                 // test only: add artificial round-trip delay (ms)
+const NO_PREDICT = QS.get("nopredict") === "1";       // test only: turn prediction off to compare
 const ICE = LOCAL_TEST ? [] : [{ urls:"stun:stun.l.google.com:19302" }, { urls:"stun:stun1.l.google.com:19302" }];
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 let online = false, net = null, onlineMenu = { mode:"menu", typed:"", msg:"" };
@@ -2179,7 +2253,10 @@ function newNet(role, code){
     rtt:0, pingT:0, helloT:0, failT:null };
 }
 function wireChannel(ch){
-  ch.onmessage = e => { net && (net.lastHeard = performance.now()); handleGame(JSON.parse(e.data)); };
+  ch.onmessage = e => {
+    const go = () => { if (!net) return; net.lastHeard = performance.now(); handleGame(JSON.parse(e.data)); };
+    SIM_LAG ? setTimeout(go, SIM_LAG / 2) : go();
+  };
   ch.onopen = () => { if (net && net.dc && net.dc.readyState === "open") onConnected(); };
   ch.onclose = () => { if (net && net.connected && !net.relay) netLost("Opponent disconnected"); };
 }
@@ -2272,12 +2349,14 @@ function netLost(msg){ if (online || net) leaveOnline(msg); }
 const ref = f => f === P1 ? 1 : f === P2 ? 2 : 0;
 const deref = n => n === 1 ? P1 : n === 2 ? P2 : null;
 const SYNC_F = ["x","y","vx","vy","facing","onGround","dmg","stocks","attack","atkT","hitstun","knockdown","dizzy","dodgeT","invuln","flash",
-  "shielding","shieldHP","sigCD","ult","dead","respawnT","spin","landT","squeezeT","pose","grabT","jumps"];
+  "shielding","shieldHP","sigCD","ult","dead","respawnT","spin","landT","squeezeT","pose","grabT","jumps",
+  "dodgeCD","airDodged","dropT","downHeld","wasShielding","fired"];
 function serF(f){
   const o = {}; for (const k of SYNC_F) o[k] = f[k];
   o.gb = ref(f.grabbing); o.gd = ref(f.grabbedBy); o.tb = ref(f.thrownBy); o.sb = ref(f.subbedBy);
   o.th = f.throwing ? { kind:f.throwing.kind, t:f.throwing.t, dur:f.throwing.dur } : null;
   o.su = f.subbing ? { meter:f.subbing.meter, name:f.subbing.name, t:f.subbing.t } : null;
+  o.gi = PLATS.indexOf(f.ground); o.hi = [...(f.hitIds || [])].map(ref);
   return o;
 }
 function applyF(f, o){
@@ -2286,9 +2365,10 @@ function applyF(f, o){
   f.grabbing = deref(o.gb); f.grabbedBy = deref(o.gd); f.thrownBy = deref(o.tb); f.subbedBy = deref(o.sb);
   f.throwing = o.th ? { ...o.th, v:other } : null;
   f.subbing = o.su ? { ...o.su, v:other } : null;
+  f.ground = o.gi >= 0 ? PLATS[o.gi] : null; f.hitIds = new Set((o.hi || []).map(deref));
 }
 function hostSnapshot(){
-  return { k:"s", n:++net.frame, st:state, w:ref(winner), pt:playTime, sh:shake, fl:impactFlash,
+  return { k:"s", n:++net.frame, ak:net.rin.ack || 0, st:state, w:ref(winner), pt:playTime, sh:shake, fl:impactFlash,
     cine: cine ? { a:ref(cine.a), b:ref(cine.b), t:cine.t, dur:cine.dur } : null,
     pr: projs.map(p => [Math.round(p.x), Math.round(p.y), p.vx, ref(p.owner), p.ak]),
     pl: PLATS.filter(p => p.move).map(p => [p.x, p.t]),
@@ -2318,11 +2398,15 @@ function handleGame(m){
       startGame(); P2.cpu = false;
       break;
     case "tosel": pick.p1ok = false; pick.p2ok = false; state = "select"; break;
-    case "in":  net.rin.h = m.h; for (const e of m.e) net.rin.e.add(e); break;
+    case "in":  net.rin.h = m.h; for (const e of m.e) net.rin.e.add(e); net.rin.seq = m.s; break;
     case "s":
       if (net.role === "guest" && (state === "playing" || state === "over")){
         const fresh = !net.snapN || m.n > net.snapN;
         applySnapshot(m);
+        if (fresh && !NO_PREDICT){                                      // reconcile: host state + my inputs it hasn't seen yet
+          net.hist = (net.hist || []).filter(h => h.s > (m.ak || 0));
+          if (state === "playing" && !cine){ quiet = true; try { for (const h of net.hist) updateFighter(P2, h.inp, 1/60); } finally { quiet = false; } }
+        }
         if (fresh && m.ev) for (const e of m.ev){
           if (e[0] === "p") floats.push({ text:e[1], x:e[2], y:e[3], color:e[4], life:0.9 });
           else if (e[0] === "a") playSfx(e[1], e[2]);
@@ -2344,6 +2428,7 @@ function hostStartMatch(){
   netSend({ k:"start", p1:pick.p1, p2:pick.p2, stage:STAGE.key, stocks:settings.stocks });
 }
 function takeRemoteInput(){
+  net.rin.ack = net.rin.seq || 0;
   const inp = blankInput(); Object.assign(inp, net.rin.h);
   for (const e of net.rin.e) inp[e] = true; net.rin.e.clear();
   return inp;
@@ -2376,11 +2461,14 @@ function guestStep(dt){
   }
   const inp = merge(merge(keyInput(P1KEYS), padInput(0)), touchInput());
   for (const e of EDGE_KEYS) if (inp[e]) net.outE.add(e);
-  net.frame++;
+  net.frame++; net.seq = (net.seq || 0) + 1;
+  net.hist = net.hist || []; net.hist.push({ s:net.seq, inp:{ ...inp } }); if (net.hist.length > 180) net.hist.shift();
   if (!net.relay || net.frame % 2 === 0){
-    netSend({ k:"in", h:{ left:inp.left, right:inp.right, up:inp.up, down:inp.down, dodge:inp.dodge }, e:[...net.outE] });
+    netSend({ k:"in", s:net.seq, h:{ left:inp.left, right:inp.right, up:inp.up, down:inp.down, dodge:inp.dodge }, e:[...net.outE] });
     net.outE.clear();
   }
+  // client-side prediction: move my own warrior immediately; the host still decides hits and KOs
+  if (P2 && !cine && state === "playing" && !NO_PREDICT){ quiet = true; try { updateFighter(P2, inp, dt); } finally { quiet = false; } }
 }
 function hostSend(){
   if (!net || !net.connected) return;
@@ -2397,8 +2485,9 @@ function stepOnline(){
   const om = onlineMenu;
   if (om.mode === "menu"){
     if (pressed.has("c")) hostRoom();
-    else if (pressed.has("j")){ om.mode = "typing"; om.typed = ""; om.msg = ""; }
-  } else if (om.mode === "typing"){
+    else if (pressed.has("j")){ om.mode = "typing"; om.typed = ""; om.msg = ""; pressed.delete("j"); }
+  }
+  if (om.mode === "typing"){
     for (const k of pressed){
       if (k.length === 1 && CODE_CHARS.includes(k.toUpperCase()) && om.typed.length < 4) om.typed += k.toUpperCase();
       if (k === "backspace") om.typed = om.typed.slice(0, -1);
