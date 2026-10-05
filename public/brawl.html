@@ -357,7 +357,7 @@ function goSelect(){ pick.p1ok = false; pick.p2ok = false; state = "select"; }
 const approach = (v, t, amt) => v < t ? Math.min(v + amt, t) : Math.max(v - amt, t);
 const atk = f => f.attack ? ATTACKS[f.attack] : null;
 function hasArmor(f){ const A = atk(f); return !!(A && A.armor && f.atkT < A.startup + A.active); }
-function popText(text, x, y, color){ floats.push({ text, x, y, color, life:0.9 }); }
+function popText(text, x, y, color){ floats.push({ text, x, y, color, life:0.9 }); if (isHost()) net.ev.push(["p", text, Math.round(x), Math.round(y), color]); }
 
 function startAttack(f, name){
   f.attack = name; f.atkT = 0; f.fired = false; f.hitIds = new Set();
@@ -718,11 +718,11 @@ function finishThrow(f){
 function spawnArrow(f, A){
   if (A.projKind === "ball"){                                        // musket: muzzle flash + smoke
     const mx = f.x + f.facing * 70, my = f.y - 58;
-    projs.push({ x:mx, y:my, vx:f.facing * A.speed, owner:f, A, life:1.0 });
+    projs.push({ x:mx, y:my, vx:f.facing * A.speed, owner:f, A, ak:f.stats.sig, life:1.0 });
     sparks(mx, my, "#FFD27A", 8, 260); sparks(mx, my, "#B8BCC4", 12, 120); shake = Math.max(shake, 4);
     return;
   }
-  projs.push({ x:f.x + f.facing * 30, y:f.y - 48, vx:f.facing * A.speed, owner:f, A, life:1.1 });
+  projs.push({ x:f.x + f.facing * 30, y:f.y - 48, vx:f.facing * A.speed, owner:f, A, ak:f.stats.sig, life:1.1 });
 }
 function updateProjs(dt){
   for (let i = projs.length - 1; i >= 0; i--){
@@ -873,6 +873,10 @@ function cpuInput(me, op){
 
 // ─── Particles & floating text ───
 function sparks(x, y, color, n, speed){
+  if (isHost()) net.ev.push(["s", Math.round(x), Math.round(y), color, n, speed]);
+  sparksLocal(x, y, color, n, speed);
+}
+function sparksLocal(x, y, color, n, speed){
   for (let i = 0; i < n; i++){
     const a = Math.random() * Math.PI * 2, s = speed * (0.35 + Math.random());
     const life = 0.25 + Math.random() * 0.35;
@@ -895,7 +899,24 @@ function menuStartPressed(){
   const gp = (navigator.getGamepads ? navigator.getGamepads() : [])[0];
   return gp && gp.buttons[9] && gp.buttons[9].pressed;
 }
+function stepSelectOnline(){
+  if (pressed.has("escape")){ leaveOnline(); return; }
+  const n = WARRIORS.length, COLS = 5, mine = net.role === "host" ? "p1" : "p2";
+  if (pick[mine + "ok"]) return;
+  const k = keyInput(P1KEYS), g = padInput(0) || blankInput(), i = merge(k, g);
+  let cur = pick[mine], before = cur;
+  if (i.leftP) cur = (cur + n - 1) % n;
+  if (i.rightP) cur = (cur + 1) % n;
+  if (i.upP && cur - COLS >= 0) cur -= COLS;
+  if (i.downP && cur + COLS < n) cur += COLS;
+  pick[mine] = cur;
+  const confirm = k.lightP || g.jumpP || g.lightP;
+  if (confirm) pick[mine + "ok"] = true;
+  if (cur !== before || confirm) netSend({ k:"sel", p:cur, ok:pick[mine + "ok"] });
+  if (net.role === "host" && pick.p1ok && pick.p2ok) hostStartMatch();
+}
 function stepSelect(){
+  if (online){ stepSelectOnline(); if (net && net.role === "host" && pick.p1ok && pick.p2ok && state === "select") hostStartMatch(); return; }
   if (pressed.has("escape")){ state = "menu"; return; }
   const n = WARRIORS.length, COLS = 5;
   const move = (cur, i) => {
@@ -941,6 +962,13 @@ function stepSettings(){
   }
 }
 function step(dt){
+  if (net) netTick(dt);
+  if (online && net && net.role === "guest" && (state === "playing" || state === "over")){ guestStep(dt); return; }
+  if (state === "online"){ animT += dt; stepOnline(); return; }
+  stepCore(dt);
+  if (isHost() && (state === "playing" || state === "over")) hostSend();
+}
+function stepCore(dt){
   animT += dt;
   impactFlash = Math.max(0, impactFlash - dt * 3.2);
   if (state === "playing" || state === "over"){
@@ -956,11 +984,18 @@ function step(dt){
     else if (pressed.has("2")){ practice = false; vsCpu = false; goSelect(); }
     else if (pressed.has("4")){ practice = true; vsCpu = true; goSelect(); }
     else if (pressed.has("3")){ setRow = 0; state = "settings"; }
+    else if (pressed.has("5")){ onlineMenu = { mode:"menu", typed:"", msg:"" }; state = "online"; }
     return;
   }
   if (state === "select"){ stepSelect(); return; }
   if (state === "settings"){ stepSettings(); return; }
   if (state === "over"){
+    if (online){
+      if (pressed.has("r") || pressed.has("enter")) hostStartMatch();
+      if (pressed.has("c")){ pick.p1ok = false; pick.p2ok = false; state = "select"; netSend({ k:"tosel" }); }
+      if (pressed.has("m") || pressed.has("escape")) leaveOnline();
+      updateFx(dt); return;
+    }
     if (pressed.has("r") || pressed.has("enter")){ resolveStage(); startGame(); }
     if (pressed.has("c")) goSelect();
     if (pressed.has("m")) state = "menu";
@@ -983,7 +1018,8 @@ function step(dt){
     if (pressed.has("6")) showMoves = !showMoves;
     if (pressed.has("7")) P1.ult = T.ultMax;
   }
-  if (pressed.has("p") || (pressed.has("escape") && !practice)) paused = !paused;
+  if (online){ if (pressed.has("escape")){ leaveOnline(); return; } }
+  else if (pressed.has("p") || (pressed.has("escape") && !practice)) paused = !paused;
   if (paused) return;
   playTime += dt;
   shake *= 0.86;
@@ -991,7 +1027,7 @@ function step(dt){
   if (hitstop > 0){ hitstop -= dt; return; }
   updatePlats(dt);
   const i1 = merge(keyInput(P1.keys), padInput(0));
-  const i2 = practice ? dummyInput(P2, P1) : P2.cpu ? cpuInput(P2, P1) : merge(keyInput(P2.keys), padInput(1));
+  const i2 = online ? takeRemoteInput() : practice ? dummyInput(P2, P1) : P2.cpu ? cpuInput(P2, P1) : merge(keyInput(P2.keys), padInput(1));
   updateFighter(P1, i1, dt);
   updateFighter(P2, i2, dt);
   checkHits(P1, P2); checkHits(P2, P1);
@@ -1489,7 +1525,7 @@ function drawHUD(){
     ctx.globalAlpha = Math.min(1, 7 - playTime);
     ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.textAlign = "center";
     ctx.fillText("P1: WASD move/jump · F light · G heavy · T signature · R grab (then a direction to throw) · hold H shield / H+dir roll", W/2, 30);
-    if (!P2.cpu) ctx.fillText("P2: Arrows move/jump · K light · L heavy · O signature · I grab · hold J shield / J+dir roll", W/2, 50);
+    if (!P2.cpu && !online) ctx.fillText("P2: Arrows move/jump · K light · L heavy · O signature · I grab · hold J shield / J+dir roll", W/2, 50);
     ctx.globalAlpha = 1;
   }
 }
@@ -1506,10 +1542,10 @@ function centerText(t, y, size, color, weight = "bold"){
 function drawMenu(){
   drawBackground();
   centerText("ROLLWARRIORS", 190, 64, "#C9A15A");
-  centerText("BRAWL · GAMEPLAY PROTOTYPE v14", 228, 18, "#8B95A3");
+  centerText("BRAWL · GAMEPLAY PROTOTYPE v15", 228, 18, "#8B95A3");
   centerText("Press 1 — vs CPU", 310, 26, "#EDEFF2");
   centerText("Press 2 — 2 Players (same keyboard)", 352, 26, "#EDEFF2");
-  centerText("Press 3 — Settings      ·      Press 4 — Practice", 394, 20, "#C9A15A");
+  centerText("3 — Settings     ·     4 — Practice     ·     5 — ONLINE", 394, 20, "#C9A15A");
   const so = STAGE_OPTIONS.find(o => o.key === settings.stage);
   centerText("Stage: " + so.name + "   ·   Stocks: " + settings.stocks + "   ·   CPU: " + DIFFS[settings.cpu].name, 640, 14, "#5D6673", "normal");
   centerText("P1: WASD move & jump · F light · G heavy · T signature · R grab · H shield/dodge · E ULTIMATE", 448, 15, "#B7BFC9", "normal");
@@ -1577,9 +1613,12 @@ function drawSelect(){
     ctx.fillText("Finish: " + Wr.sub, tx, py + 214); ctx.fillText("Ultimate: " + Wr.ult, tx, py + 230);
   };
   const half = (W - 60) / 2;
-  panel(pick.p1, 20, half, "P1", "#FFFFFF", pick.p1ok);
-  if (!vsCpu || pick.p2ok) panel(pick.p2, 40 + half, half, vsCpu ? (practice ? "DUMMY" : "CPU") : "P2", "#4A9FD0", pick.p2ok);
+  const you = online && net ? (net.role === "host" ? 1 : 2) : 0;
+  panel(pick.p1, 20, half, you === 1 ? "P1 · YOU" : you === 2 ? "P1 · OPPONENT" : "P1", "#FFFFFF", pick.p1ok);
+  if (online) panel(pick.p2, 40 + half, half, you === 2 ? "P2 · YOU" : "P2 · OPPONENT", "#4A9FD0", pick.p2ok);
+  else if (!vsCpu || pick.p2ok) panel(pick.p2, 40 + half, half, vsCpu ? (practice ? "DUMMY" : "CPU") : "P2", "#4A9FD0", pick.p2ok);
   else { ctx.fillStyle = "rgba(20,24,31,0.6)"; roundRect(40 + half, py, half, ph, 16); ctx.fill(); ctx.fillStyle = "#5D6673"; ctx.font = "bold 14px system-ui"; ctx.textAlign = "center"; ctx.fillText(practice ? "Dummy picked after you" : "CPU picks at random", 40 + half + half / 2, py + ph / 2); }
+  if (online) centerText("A / D / W / S to choose · F to confirm · Esc leave", H - 14, 14, "#8B95A3", "normal"); else
   centerText(vsCpu ? "P1: A / D / W / S to choose · F to confirm · Esc back" : "P1: A/D/W/S choose · F confirm      P2: arrows choose · K confirm      Esc back", H - 14, 14, "#8B95A3", "normal");
 }
 function drawSettings(){
@@ -1780,6 +1819,7 @@ function drawBanner(){
 function draw(){
   ctx.save();
   if (state === "settings"){ drawSettings(); ctx.restore(); return; }
+  if (state === "online"){ drawOnline(); ctx.restore(); return; }
   if (state === "menu"){ drawMenu(); ctx.restore(); return; }
   if (state === "select"){ drawSelect(); ctx.restore(); return; }
   const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
@@ -1801,6 +1841,7 @@ function draw(){
   drawHUD();
   if (practice) drawPractice(); else drawBanner();
   if (cine) drawCine();
+  drawNetBadge();
   if (impactFlash > 0){ ctx.fillStyle = `rgba(255,255,255,${impactFlash})`; ctx.fillRect(0, 0, W, H); }
   if (paused){
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
@@ -1809,8 +1850,310 @@ function draw(){
   if (state === "over"){
     ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(0, 0, W, H);
     centerText(winner.tag + " " + winner.name + " WINS", H/2 - 20, 60, winner.color);
-    centerText("R — rematch    ·    C — change warriors    ·    M — menu", H/2 + 30, 18, "#B7BFC9", "normal");
+    const overHelp = !online ? "R — rematch    ·    C — change warriors    ·    M — menu"
+      : net && net.role === "host" ? "R — rematch    ·    C — change warriors    ·    M — leave" : "R — ask for a rematch    ·    M — leave";
+    centerText(overHelp, H/2 + 30, 18, "#B7BFC9", "normal");
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  ONLINE 1v1
+//  · Room codes; Supabase Realtime is only used to introduce the two players.
+//  · Then a direct WebRTC connection carries the game (lowest lag, free).
+//  · If a network blocks direct connections, it falls back to relaying via Supabase.
+//  · The room creator (host) runs the match; the joiner sends inputs, gets the action back.
+// ═══════════════════════════════════════════════════════════════
+const SUPA_URL = "https://awssdwyjcnqmgheghkrf.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3c3Nkd3lqY25xbWdoZWdoa3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg4MDk2NzMsImV4cCI6MjEwNDM4NTY3M30.Za_WkegV4OHoZXWrYrLGWZ74-xMVUvZVQNTw8y-kZlE";
+const QS = new URLSearchParams(typeof location !== "undefined" ? location.search : "");
+const LOCAL_TEST = QS.get("localtest") === "1";          // two tabs on one computer, no internet needed
+const FORCE_RELAY = QS.get("relay") === "1";
+const ICE = LOCAL_TEST ? [] : [{ urls:"stun:stun.l.google.com:19302" }, { urls:"stun:stun1.l.google.com:19302" }];
+const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+let online = false, net = null, onlineMenu = { mode:"menu", typed:"", msg:"" };
+let sbClient = null, savedStocks = null;
+
+function loadSupabase(){
+  return new Promise((res, rej) => {
+    if (window.supabase){ res(); return; }
+    const sc = document.createElement("script");
+    sc.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
+    sc.onload = () => res(); sc.onerror = () => rej(new Error("Couldn't load the online service"));
+    document.head.appendChild(sc);
+  });
+}
+async function makeSignal(code, onMsg){
+  if (LOCAL_TEST){
+    const bc = new BroadcastChannel("brawl-" + code);
+    bc.onmessage = e => onMsg(e.data);
+    return { send: m => bc.postMessage(m), close: () => bc.close() };
+  }
+  await loadSupabase();
+  if (!sbClient) sbClient = window.supabase.createClient(SUPA_URL, SUPA_KEY, { realtime:{ params:{ eventsPerSecond: 60 } } });
+  const ch = sbClient.channel("brawl-" + code, { config:{ broadcast:{ self:false } } });
+  ch.on("broadcast", { event:"m" }, ({ payload }) => onMsg(payload));
+  let ready = false; const queue = [];
+  ch.subscribe(st => { if (st === "SUBSCRIBED"){ ready = true; queue.splice(0).forEach(m => ch.send({ type:"broadcast", event:"m", payload:m })); } });
+  return { send: m => ready ? ch.send({ type:"broadcast", event:"m", payload:m }) : queue.push(m), close: () => sbClient.removeChannel(ch) };
+}
+function newNet(role, code){
+  return { role, code, status:"waiting", sig:null, pc:null, dc:null, dcU:null, relay:false, connected:false,
+    rin:{ h:{}, e:new Set() }, outE:new Set(), snapIn:null, ev:[], frame:0, lastHeard:performance.now(),
+    rtt:0, pingT:0, helloT:0, failT:null };
+}
+function wireChannel(ch){
+  ch.onmessage = e => { net && (net.lastHeard = performance.now()); handleGame(JSON.parse(e.data)); };
+  ch.onopen = () => { if (net && net.dc && net.dc.readyState === "open") onConnected(); };
+  ch.onclose = () => { if (net && net.connected && !net.relay) netLost("Opponent disconnected"); };
+}
+function makePC(){
+  const pc = new RTCPeerConnection({ iceServers: ICE });
+  pc.onicecandidate = e => { if (e.candidate && net) net.sig.send({ t:"ice", c:e.candidate.toJSON() }); };
+  pc.onconnectionstatechange = () => { if (net && net.connected && !net.relay && (pc.connectionState === "failed" || pc.connectionState === "disconnected")) netLost("Connection lost"); };
+  return pc;
+}
+async function hostRoom(){
+  let code = ""; for (let i = 0; i < 4; i++) code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+  net = newNet("host", code); onlineMenu.mode = "hosting"; onlineMenu.msg = "";
+  try { net.sig = await makeSignal(code, onSignal); } catch (e){ onlineMenu.msg = e.message; onlineMenu.mode = "menu"; net = null; }
+}
+async function joinRoom(code){
+  net = newNet("guest", code); onlineMenu.mode = "joining"; onlineMenu.msg = "Looking for room " + code + "…";
+  try { net.sig = await makeSignal(code, onSignal); } catch (e){ onlineMenu.msg = e.message; onlineMenu.mode = "menu"; net = null; return; }
+  net.sig.send({ t:"hello" }); net.helloT = performance.now();
+}
+async function onSignal(m){
+  if (!net) return;
+  net.lastHeard = performance.now();
+  if (m.t === "g"){ handleGame(m.m); return; }                 // relayed game message
+  if (net.role === "host"){
+    if (m.t === "hello" && !net.pc){
+      onlineMenu.msg = "Friend found — connecting…";
+      if (FORCE_RELAY){ startRelay(); return; }
+      net.pc = makePC();
+      net.dc = net.pc.createDataChannel("game", { ordered:true });
+      net.dcU = net.pc.createDataChannel("snap", { ordered:false, maxRetransmits:0 });
+      wireChannel(net.dc); wireChannel(net.dcU);
+      const offer = await net.pc.createOffer(); await net.pc.setLocalDescription(offer);
+      net.sig.send({ t:"offer", sdp:net.pc.localDescription.toJSON() });
+      net.failT = setTimeout(() => { if (net && !net.connected) startRelay(); }, 8000);   // direct link blocked? use the relay
+    }
+    else if (m.t === "answer" && net.pc) await net.pc.setRemoteDescription(m.sdp);
+    else if (m.t === "ice" && net.pc){ try { await net.pc.addIceCandidate(m.c); } catch(e){} }
+  } else {
+    if (m.t === "offer" && !net.pc){
+      onlineMenu.msg = "Room found — connecting…";
+      net.pc = makePC();
+      net.pc.ondatachannel = e => {
+        if (e.channel.label === "game") net.dc = e.channel; else net.dcU = e.channel;
+        wireChannel(e.channel);
+        if (e.channel.label === "game" && e.channel.readyState === "open") onConnected();   // already open by the time we see it
+      };
+      await net.pc.setRemoteDescription(m.sdp);
+      const ans = await net.pc.createAnswer(); await net.pc.setLocalDescription(ans);
+      net.sig.send({ t:"answer", sdp:net.pc.localDescription.toJSON() });
+    }
+    else if (m.t === "ice" && net.pc){ try { await net.pc.addIceCandidate(m.c); } catch(e){} }
+    else if (m.t === "relay"){ net.relay = true; onConnected(); }
+  }
+}
+function startRelay(){
+  if (!net || net.connected) return;
+  net.relay = true; net.sig.send({ t:"relay" }); onConnected();
+}
+function onConnected(){
+  if (!net || net.connected) return;
+  net.connected = true; clearTimeout(net.failT);
+  online = true; practice = false; vsCpu = false;
+  savedStocks = settings.stocks;
+  onlineMenu.msg = ""; net.lastHeard = performance.now();
+  pick.p1 = 0; pick.p2 = 1; pick.p1ok = false; pick.p2ok = false;
+  state = "select";
+}
+function netSend(m, unreliable){
+  if (!net || !net.connected) return;
+  if (net.relay){ net.sig.send({ t:"g", m }); return; }
+  const ch = unreliable && net.dcU && net.dcU.readyState === "open" ? net.dcU : net.dc;
+  if (ch && ch.readyState === "open") ch.send(JSON.stringify(m));
+}
+function leaveOnline(msg){
+  if (net){
+    try { netSend({ k:"bye" }); } catch(e){}
+    try { net.pc && net.pc.close(); } catch(e){}
+    try { net.sig && net.sig.close(); } catch(e){}
+    clearTimeout(net.failT);
+  }
+  net = null; online = false;
+  if (savedStocks !== null){ settings.stocks = savedStocks; savedStocks = null; }
+  onlineMenu = { mode:"menu", typed:"", msg: msg || "" };
+  cine = null; paused = false;
+  state = msg ? "online" : "menu";
+}
+function netLost(msg){ if (online || net) leaveOnline(msg); }
+
+// ── messages during a session ──
+const ref = f => f === P1 ? 1 : f === P2 ? 2 : 0;
+const deref = n => n === 1 ? P1 : n === 2 ? P2 : null;
+const SYNC_F = ["x","y","vx","vy","facing","onGround","dmg","stocks","attack","atkT","hitstun","knockdown","dizzy","dodgeT","invuln","flash",
+  "shielding","shieldHP","sigCD","ult","dead","respawnT","spin","landT","squeezeT","pose","grabT","jumps"];
+function serF(f){
+  const o = {}; for (const k of SYNC_F) o[k] = f[k];
+  o.gb = ref(f.grabbing); o.gd = ref(f.grabbedBy); o.tb = ref(f.thrownBy); o.sb = ref(f.subbedBy);
+  o.th = f.throwing ? { kind:f.throwing.kind, t:f.throwing.t, dur:f.throwing.dur } : null;
+  o.su = f.subbing ? { meter:f.subbing.meter, name:f.subbing.name, t:f.subbing.t } : null;
+  return o;
+}
+function applyF(f, o){
+  for (const k of SYNC_F) f[k] = o[k];
+  const other = f === P1 ? P2 : P1;
+  f.grabbing = deref(o.gb); f.grabbedBy = deref(o.gd); f.thrownBy = deref(o.tb); f.subbedBy = deref(o.sb);
+  f.throwing = o.th ? { ...o.th, v:other } : null;
+  f.subbing = o.su ? { ...o.su, v:other } : null;
+}
+function hostSnapshot(){
+  return { k:"s", n:++net.frame, st:state, w:ref(winner), pt:playTime, sh:shake, fl:impactFlash,
+    cine: cine ? { a:ref(cine.a), b:ref(cine.b), t:cine.t, dur:cine.dur } : null,
+    pr: projs.map(p => [Math.round(p.x), Math.round(p.y), p.vx, ref(p.owner), p.ak]),
+    pl: PLATS.filter(p => p.move).map(p => [p.x, p.t]),
+    f1: serF(P1), f2: serF(P2) };
+}
+function applySnapshot(m){
+  if (!P1 || !P2) return;
+  if (net.snapN && m.n <= net.snapN) return;             // ignore late, out-of-order snapshots
+  net.snapN = m.n;
+  applyF(P1, m.f1); applyF(P2, m.f2);
+  playTime = m.pt; shake = m.sh; impactFlash = Math.max(impactFlash, m.fl);
+  cine = m.cine ? { a:deref(m.cine.a), b:deref(m.cine.b), t:m.cine.t, dur:m.cine.dur } : null;
+  projs.length = 0;
+  for (const [x, y, vx, o, ak] of m.pr) projs.push({ x, y, vx, owner:deref(o), A:ATTACKS[ak], ak, life:1 });
+  PLATS.filter(p => p.move).forEach((p, i) => { if (m.pl[i]){ p.x = m.pl[i][0]; p.t = m.pl[i][1]; } });
+  if (m.st === "over" && state !== "over"){ winner = deref(m.w); state = "over"; }
+}
+function handleGame(m){
+  if (!net) return;
+  switch (m.k){
+    case "sel":
+      if (net.role === "host"){ pick.p2 = m.p; pick.p2ok = m.ok; } else { pick.p1 = m.p; pick.p1ok = m.ok; }
+      break;
+    case "start":
+      pick.p1 = m.p1; pick.p2 = m.p2; STAGE = STAGES.find(st => st.key === m.stage) || STAGES[1];
+      settings.stocks = m.stocks; net.snapN = 0;
+      startGame(); P2.cpu = false;
+      break;
+    case "tosel": pick.p1ok = false; pick.p2ok = false; state = "select"; break;
+    case "in":  net.rin.h = m.h; for (const e of m.e) net.rin.e.add(e); break;
+    case "s":
+      if (net.role === "guest" && (state === "playing" || state === "over")){
+        const fresh = !net.snapN || m.n > net.snapN;
+        applySnapshot(m);
+        if (fresh && m.ev) for (const e of m.ev){ if (e[0] === "p") floats.push({ text:e[1], x:e[2], y:e[3], color:e[4], life:0.9 }); else sparksLocal(e[1], e[2], e[3], e[4], e[5]); }
+      }
+      break;
+    case "ev":
+      for (const e of m.e){ if (e[0] === "p") floats.push({ text:e[1], x:e[2], y:e[3], color:e[4], life:0.9 }); else sparksLocal(e[1], e[2], e[3], e[4], e[5]); }
+      break;
+    case "rematch": if (net.role === "host" && state === "over") hostStartMatch(); break;
+    case "ping": netSend({ k:"pong", t:m.t }); break;
+    case "pong": net.rtt = Math.round(performance.now() - m.t); break;
+    case "bye":  netLost("Your opponent left the match"); break;
+  }
+}
+function hostStartMatch(){
+  resolveStage(); startGame(); P2.cpu = false;
+  netSend({ k:"start", p1:pick.p1, p2:pick.p2, stage:STAGE.key, stocks:settings.stocks });
+}
+function takeRemoteInput(){
+  const inp = blankInput(); Object.assign(inp, net.rin.h);
+  for (const e of net.rin.e) inp[e] = true; net.rin.e.clear();
+  return inp;
+}
+const EDGE_KEYS = ["jumpP","lightP","heavyP","dodgeP","grabP","sigP","ultP","leftP","rightP","upP","downP"];
+function netTick(dt){
+  if (!net) return;
+  const now = performance.now();
+  if (net.connected){
+    if (now - net.pingT > 1000){ net.pingT = now; netSend({ k:"ping", t:now }); }
+    if (now - net.lastHeard > 6000) netLost("Connection lost");
+  } else if (net.role === "guest" && !net.pc && !net.relay && now - net.helloT > 1000){
+    net.helloT = now; net.sig && net.sig.send({ t:"hello" });     // keep knocking until the host answers
+  }
+}
+function guestStep(dt){
+  // visuals run locally; the fight itself comes from the host
+  animT += dt; impactFlash = Math.max(0, impactFlash - dt * 3.2);
+  updateAmbient(dt); updateFx(dt);
+  if (P1 && P2){
+    const alive = [P1, P2].filter(f => !f.dead);
+    const tx = alive.length ? alive.reduce((a, f) => a + f.x, 0) / alive.length : W/2;
+    bgShift += ((W/2 - tx) * 0.04 - bgShift) * Math.min(1, dt * 2);
+  }
+  if (pressed.has("escape")){ leaveOnline(); return; }
+  if (state === "over"){
+    if (pressed.has("r") || pressed.has("enter")) netSend({ k:"rematch" });
+    if (pressed.has("m")) leaveOnline();
+    return;
+  }
+  const inp = merge(keyInput(P1KEYS), padInput(0));
+  for (const e of EDGE_KEYS) if (inp[e]) net.outE.add(e);
+  net.frame++;
+  if (!net.relay || net.frame % 2 === 0){
+    netSend({ k:"in", h:{ left:inp.left, right:inp.right, up:inp.up, down:inp.down, dodge:inp.dodge }, e:[...net.outE] });
+    net.outE.clear();
+  }
+}
+function hostSend(){
+  if (!net || !net.connected) return;
+  net.tick = (net.tick || 0) + 1;
+  if (net.relay && net.tick % 3 !== 0) return;            // relay: 20 updates/sec · direct: 60/sec
+  const snap = hostSnapshot(); snap.ev = net.ev; net.ev = [];   // visual effects ride along with the snapshot
+  netSend(snap, true);
+}
+const isHost = () => online && net && net.role === "host";
+
+// ── online lobby screen ──
+function stepOnline(){
+  if (pressed.has("escape")){ if (net) leaveOnline(); else state = "menu"; return; }
+  const om = onlineMenu;
+  if (om.mode === "menu"){
+    if (pressed.has("c")) hostRoom();
+    else if (pressed.has("j")){ om.mode = "typing"; om.typed = ""; om.msg = ""; }
+  } else if (om.mode === "typing"){
+    for (const k of pressed){
+      if (k.length === 1 && CODE_CHARS.includes(k.toUpperCase()) && om.typed.length < 4) om.typed += k.toUpperCase();
+      if (k === "backspace") om.typed = om.typed.slice(0, -1);
+      if (k === "enter" && om.typed.length === 4) joinRoom(om.typed);
+    }
+  }
+}
+function drawOnline(){
+  drawBackground();
+  const om = onlineMenu;
+  centerText("ONLINE", 150, 54, "#C9A15A");
+  centerText("1v1 with a friend on another device", 186, 17, "#8B95A3", "normal");
+  if (om.mode === "menu"){
+    centerText("Press C — Create a room", 300, 26, "#EDEFF2");
+    centerText("Press J — Join a room", 344, 26, "#EDEFF2");
+    centerText("The room creator's settings (stage, lives) are used.", 420, 15, "#8B95A3", "normal");
+  } else if (om.mode === "hosting"){
+    centerText("YOUR ROOM CODE", 270, 18, "#8B95A3");
+    centerText(net ? net.code : "····", 350, 96, "#FFFFFF", "900");
+    centerText("Send this code to your friend. Waiting for them to join…", 410, 17, "#B7BFC9", "normal");
+  } else if (om.mode === "typing" || om.mode === "joining"){
+    centerText("ENTER ROOM CODE", 270, 18, "#8B95A3");
+    const t = om.mode === "typing" ? om.typed : (net ? net.code : om.typed);
+    centerText((t + "____").slice(0, 4).split("").join(" "), 350, 84, "#FFFFFF", "900");
+    if (om.mode === "typing") centerText("Type the 4 letters, then Enter", 410, 17, "#B7BFC9", "normal");
+  }
+  if (om.msg) centerText(om.msg, 470, 17, "#FFD36A");
+  centerText("Esc — back", 660, 14, "#5D6673", "normal");
+}
+function drawNetBadge(){
+  if (!online || !net) return;
+  const txt = (net.relay ? "ONLINE · RELAY" : "ONLINE · DIRECT") + (net.rtt ? " · " + net.rtt + " ms" : "");
+  ctx.font = "bold 11px system-ui"; const w = ctx.measureText(txt).width + 22;
+  ctx.fillStyle = "rgba(11,14,19,0.8)"; roundRect(W - w - 14, 12, w, 22, 11); ctx.fill();
+  ctx.fillStyle = net.rtt > 150 ? "#FF8A4C" : "#5AE68C"; ctx.textAlign = "left"; ctx.fillText(txt, W - w - 3, 27);
 }
 
 // ─── Fixed-timestep loop (same speed on every device) ───
