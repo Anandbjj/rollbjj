@@ -34,6 +34,7 @@ const T = {
   dodgeTime: 0.22, dodgeSpeed: 620, dodgeCooldown: 0.7,
   shieldMax: 100, shieldDrain: 10, shieldRegen: 18, shieldBreakStun: 1.6,
   grabHold: 0.7, dropHold: 0.15,
+  scrTime: 2.2, scrPress: 8, scrStart: 45,                       // scramble after a defended submission
   subTime: 4.0, subPress: 5, subDriftFrom: 50, subDriftRate: 0.2,   // submission battle: past 60% damage the meter drifts toward tapping
   respawnInvuln: 1.5, stocks: 3,
   ultMax: 100, ultDealt: 0.5, ultTaken: 0.25, ultFinishAt: 80, ultDamage: 25, cineTime: 1.75,   // ultimate meter
@@ -219,19 +220,28 @@ const BLAST = { l:-260, r:W+260, t:-260, b:H+220 };
 // ─── Input ───
 const down = new Set(), pressed = new Set();
 addEventListener("keydown", e => {
+  if (typeof ctl !== "undefined" && state === "controls" && ctl.waiting){
+    e.preventDefault(); const kk = e.key.toLowerCase();
+    if (kk !== "escape") assignKey(kk);
+    ctl.waiting = false; return;
+  }
   const k = e.key.toLowerCase();
   if (!down.has(k)) pressed.add(k);
   down.add(k);
   if ([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(k)) e.preventDefault();
 });
 addEventListener("keyup", e => down.delete(e.key.toLowerCase()));
-const P1KEYS = { left:"a", right:"d", up:"w", down:"s", light:"f", heavy:"g", dodge:"h", grab:"r", sig:"t", ult:"e" };
-const P2KEYS = { left:"arrowleft", right:"arrowright", up:"arrowup", down:"arrowdown", light:"k", heavy:"l", dodge:"j", grab:"i", sig:"o", ult:"u" };
+const P1KEYS = { left:"a", right:"d", up:"w", down:"s", jump:"w", light:"f", heavy:"g", dodge:"h", grab:"r", sig:"t", ult:"e" };
+const P2KEYS = { left:"arrowleft", right:"arrowright", up:"arrowup", down:"arrowdown", jump:"arrowup", light:"k", heavy:"l", dodge:"j", grab:"i", sig:"o", ult:"u" };
+const DEFAULT_KEYS = { 1:{ ...P1KEYS }, 2:{ ...P2KEYS } };
+try { Object.assign(P1KEYS, JSON.parse(localStorage.getItem("rw_keys_p1") || "{}")); Object.assign(P2KEYS, JSON.parse(localStorage.getItem("rw_keys_p2") || "{}")); } catch(e){}
+function saveKeys(){ try { localStorage.setItem("rw_keys_p1", JSON.stringify(P1KEYS)); localStorage.setItem("rw_keys_p2", JSON.stringify(P2KEYS)); } catch(e){} }
+const isBound = k => Object.values(P1KEYS).includes(k) || Object.values(P2KEYS).includes(k);
 const blankInput = () => ({ left:false, right:false, up:false, down:false, jumpP:false, lightP:false, heavyP:false,
   dodgeP:false, dodge:false, grabP:false, sigP:false, ultP:false, leftP:false, rightP:false, upP:false, downP:false });
 function keyInput(k){
   return { left:down.has(k.left), right:down.has(k.right), up:down.has(k.up), down:down.has(k.down),
-    jumpP:pressed.has(k.up), lightP:pressed.has(k.light), heavyP:pressed.has(k.heavy),
+    jumpP:pressed.has(k.jump || k.up), lightP:pressed.has(k.light), heavyP:pressed.has(k.heavy),
     dodgeP:pressed.has(k.dodge), dodge:down.has(k.dodge), grabP:pressed.has(k.grab), sigP:pressed.has(k.sig), ultP:pressed.has(k.ult),
     leftP:pressed.has(k.left), rightP:pressed.has(k.right), upP:pressed.has(k.up), downP:pressed.has(k.down) };
 }
@@ -338,7 +348,7 @@ function makeFighter(o){
     dmg:0, stocks:T.stocks, attack:null, atkT:0, fired:false, hitIds:new Set(),
     hitstun:0, knockdown:0, dizzy:0, dodgeT:0, dodgeCD:0, airDodged:false,
     shielding:false, wasShielding:false, shieldHP:T.shieldMax, sigCD:0, downHeld:0,
-    grabbing:null, grabbedBy:null, grabT:0, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null, squeezeT:0, ult:0,
+    grabbing:null, grabbedBy:null, grabT:0, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null, squeezeT:0, ult:0, scr:null, scrBy:null, sprawlHold:false,
     invuln:0, flash:0, dropT:0, dead:false, respawnT:0, spin:0, ai:{ think:0, plan:null, shieldT:0 } };
 }
 function startGame(){
@@ -361,6 +371,13 @@ function goSelect(){ pick.p1ok = false; pick.p2ok = false; state = "select"; }
 const approach = (v, t, amt) => v < t ? Math.min(v + amt, t) : Math.max(v - amt, t);
 const atk = f => f.attack ? ATTACKS[f.attack] : null;
 function hasArmor(f){ const A = atk(f); return !!(A && A.armor && f.atkT < A.startup + A.active); }
+const KEY_NAMES = { " ":"SPACE", arrowleft:"←", arrowright:"→", arrowup:"↑", arrowdown:"↓", shift:"SHIFT", control:"CTRL", alt:"ALT", enter:"ENTER", tab:"TAB", backspace:"BKSP", capslock:"CAPS", meta:"CMD" };
+function keyLabel(k){ return k ? (KEY_NAMES[k] || k.toUpperCase()) : "?"; }
+function ctrlLine(K){
+  const mv = [K.left, K.right, K.up, K.down].map(keyLabel).join("/");
+  return mv + " move · " + keyLabel(K.jump || K.up) + " jump · " + keyLabel(K.light) + " light · " + keyLabel(K.heavy) + " heavy · " +
+         keyLabel(K.sig) + " signature · " + keyLabel(K.grab) + " grab · " + keyLabel(K.dodge) + " shield · " + keyLabel(K.ult) + " ULT";
+}
 let quiet = false;                                               // true while the guest predicts its own warrior
 function popText(text, x, y, color){ if (quiet) return; floats.push({ text, x, y, color, life:0.9 }); if (isHost()) net.ev.push(["p", text, Math.round(x), Math.round(y), color]); }
 
@@ -379,6 +396,12 @@ function updateFighter(f, inp, dt){
   f.landT = Math.max(0, f.landT - dt);
   if (!f.shielding) f.shieldHP = Math.min(T.shieldMax, f.shieldHP + T.shieldRegen * dt);
 
+  if (f.scrBy){                                           // scramble: mash to reverse
+    f.shielding = false;
+    if (inp.lightP || inp.heavyP){ f.scrBy.scr.m -= T.scrPress * f.stats.escape; f.squeezeT = 0.1; }
+    return;
+  }
+  if (f.scr){ updateScramble(f, inp, dt); return; }
   if (f.subbedBy){                                        // caught in a submission: mash to escape
     f.shielding = false;
     if (inp.lightP || inp.heavyP) f.subbedBy.subbing.meter -= T.subPress * f.stats.escape;
@@ -387,7 +410,7 @@ function updateFighter(f, inp, dt){
   if (f.subbing){ updateSub(f, inp, dt); return; }       // cranking a submission
   if (f.thrownBy){ f.shielding = false; return; }        // mid-throw: the thrower moves us
   if (f.throwing){ updateThrow(f, dt); return; }         // playing a throw animation
-  if (f.grabbedBy){ f.shielding = false; return; }       // held: the grabber controls us
+  if (f.grabbedBy){ f.shielding = false; f.sprawlHold = !!inp.down; return; }   // held: hold DOWN to be ready to sprawl
 
   if (f.grabbing){                                          // holding someone: pick a throw
     f.grabT += dt; f.vx = 0; f.vy = 0;
@@ -534,7 +557,7 @@ function hitbox(f){
 }
 function checkHits(a, b){
   const hb = hitbox(a);
-  if (!hb || b.dead || b.grabbedBy || b.thrownBy || b.throwing || b.subbedBy || b.subbing || a.hitIds.has(b)) return;
+  if (!hb || b.dead || b.grabbedBy || b.thrownBy || b.throwing || b.subbedBy || b.subbing || b.scr || b.scrBy || a.hitIds.has(b)) return;
   if (!overlap(hb, body(b))) return;
   const A = hb.A;
   if (A.grab){
@@ -598,7 +621,16 @@ function breakShield(f){
 }
 const ease = k => k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
 const clamp01 = k => Math.max(0, Math.min(1, k));
+function sprawl(f, v){                                              // takedown stuffed: the shooter ends up pinned
+  f.grabbing = null; v.grabbedBy = null; v.sprawlHold = false;
+  popText("SPRAWL!", v.x, v.y - 150, v.color); sfx("slam");
+  shake = Math.max(shake, 9); hitstop = 0.07; sparks(f.x, f.y, "#C8B08A", 16, 260);
+  f.knockdown = 0.75; f.onGround = true; f.vx = f.vy = 0; f.attack = null; f.hitstun = 0;
+  v.facing = f.x >= v.x ? 1 : -1;
+  v.ult = Math.min(T.ultMax, v.ult + 8);
+}
 function doThrow(f, dirKey){
+  if (dirKey === "down" && f.grabbing && f.grabbing.sprawlHold){ sprawl(f, f.grabbing); return; }
   const v = f.grabbing; f.grabbing = null; v.grabbedBy = null;
   f.throwing = { kind:dirKey, t:0, dur:THROWS[dirKey].dur, v, x0:f.x, y0:f.y, d:f.facing, impact:false };
   v.thrownBy = f;
@@ -699,7 +731,43 @@ function updateSub(a, inp, dt){
   sb.meter += (v.dmg - T.subDriftFrom) * T.subDriftRate * dt; // hurt opponents slip toward tapping, fresh ones toward escaping
   a.pose = { lean: 0.3, sy: 0.82 * (a.squeezeT > 0 ? 0.96 : 1), sx: a.squeezeT > 0 ? 1.08 : 1.04 };
   if (sb.meter >= 100) endSub(a, "tap");
-  else if (sb.meter <= 0 || sb.t >= T.subTime) endSub(a, "escape");
+  else if (sb.meter <= 0){ if (sb.noScramble) endSub(a, "escape"); else startScramble(a); }   // one reversal per exchange
+  else if (sb.t >= (sb.maxT || T.subTime)) endSub(a, "escape");
+}
+function startScramble(a){
+  const v = a.subbing.v;
+  a.subbing = null; v.subbedBy = null;
+  a.scr = { v, m:T.scrStart, t:0 }; v.scrBy = a;
+  a.squeezeT = 0; v.squeezeT = 0;
+  popText("SCRAMBLE!", (a.x + v.x) / 2, a.y - 160, "#FFFFFF"); sfx("subStart");
+  hitstop = 0.06; shake = Math.max(shake, 5);
+}
+function updateScramble(a, inp, dt){
+  const sc = a.scr, v = sc.v;
+  sc.t += dt; a.vx = a.vy = 0; v.vx = v.vy = 0;
+  if (inp.lightP || inp.heavyP){ sc.m += T.scrPress * a.stats.subPower; a.squeezeT = 0.1; sfx("squeeze"); }
+  a.squeezeT = Math.max(0, a.squeezeT - dt); v.squeezeT = Math.max(0, v.squeezeT - dt);
+  const w = Math.sin(sc.t * 18) * 0.12;                                   // rolling around on the mat
+  a.pose = { rot:-Math.PI / 2 * (0.55 + w), pivot:"feet" };
+  v.pose = { rot:-Math.PI / 2 * (0.55 - w), pivot:"feet" };
+  if (sc.m <= 0) endScramble(a, "reverse");
+  else if (sc.m >= 100 || sc.t >= T.scrTime) endScramble(a, "reset");
+}
+function endScramble(a, res){
+  const v = a.scr.v;
+  a.scr = null; v.scrBy = null; a.pose = null; v.pose = null;
+  if (res === "reverse"){
+    popText("REVERSAL!", v.x, v.y - 165, v.color); sfx("escape");
+    a.knockdown = 0.4; a.onGround = true;
+    startSub(v, a);                                                       // the defender now has the submission
+    if (v.subbing){ v.subbing.noScramble = true; v.subbing.maxT = 2.5; }
+  } else {
+    popText("RESET", (a.x + v.x) / 2, a.y - 150, "#B7BFC9"); sfx("escape");
+    const d = v.x >= a.x ? 1 : -1;
+    v.vx = d * 320; a.vx = -d * 320; v.vy = a.vy = -260; v.onGround = a.onGround = false;
+    v.invuln = a.invuln = 0.35; a.knockdown = v.knockdown = 0;
+    startAttack(a, "throwLag");
+  }
 }
 function endSub(a, result){
   const sb = a.subbing, v = sb.v;
@@ -745,7 +813,7 @@ function updateProjs(dt){
     const p = projs[i]; p.x += p.vx * dt; p.life -= dt;
     let hit = false;
     for (const b of [P1, P2]){
-      if (b === p.owner || b.dead || b.invuln > 0 || b.grabbedBy || b.thrownBy || b.throwing || b.subbedBy || b.subbing) continue;
+      if (b === p.owner || b.dead || b.invuln > 0 || b.grabbedBy || b.thrownBy || b.throwing || b.subbedBy || b.subbing || b.scr || b.scrBy) continue;
       const bb = body(b);
       if (p.x > bb.x - 14 && p.x < bb.x + bb.w + 14 && p.y > bb.y && p.y < bb.y + bb.h){
         const dir = Math.sign(p.vx);
@@ -767,6 +835,8 @@ function releaseGrabs(f){
   if (f.thrownBy){ f.thrownBy.throwing = null; f.thrownBy.pose = null; f.thrownBy = null; }
   if (f.subbing){ f.subbing.v.subbedBy = null; f.subbing.v.pose = null; f.subbing = null; }
   if (f.subbedBy){ f.subbedBy.subbing = null; f.subbedBy.pose = null; f.subbedBy = null; }
+  if (f.scr){ f.scr.v.scrBy = null; f.scr.v.pose = null; f.scr = null; }
+  if (f.scrBy){ f.scrBy.scr = null; f.scrBy.pose = null; f.scrBy = null; }
   f.pose = null;
 }
 function KO(f){
@@ -788,7 +858,7 @@ function KO(f){
 function respawn(f){
   Object.assign(f, { dead:false, x: W/2 + (f === P1 ? -80 : 80), y:120, vx:0, vy:0, dmg:(practice && f === P2) ? DUMMY_DMG[dummyDmgIdx] : 0, invuln:T.respawnInvuln,
     attack:null, hitstun:0, knockdown:0, dizzy:0, jumps:f.stats.jumps, dodgeT:0, onGround:false,
-    shielding:false, shieldHP:T.shieldMax, sigCD:0, grabbing:null, grabbedBy:null, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null });
+    shielding:false, shieldHP:T.shieldMax, sigCD:0, grabbing:null, grabbedBy:null, throwing:null, thrownBy:null, pose:null, subbing:null, subbedBy:null, scr:null, scrBy:null, sprawlHold:false });
 }
 
 // ─── CPU opponent (beatable on purpose — has reaction delay) ───
@@ -811,7 +881,12 @@ function sigInRange(sig, adx, ady, me, dx){
 function cpuInput(me, op){
   const inp = blankInput();
   if (me.dead || op.dead) return inp;
-  if (me.subbing || me.subbedBy){                                        // mash
+  if (!me.grabbedBy) me.ai.inGrab = false;
+  if (me.grabbedBy){                                                      // read the takedown? hold down to sprawl
+    if (!me.ai.inGrab){ me.ai.inGrab = true; me.ai.sprawl = Math.random() < ({ easy:0.12, normal:0.3, hard:0.45 }[settings.cpu]); }
+    inp.down = me.ai.sprawl; return inp;
+  }
+  if (me.subbing || me.subbedBy || me.scr || me.scrBy){                  // mash
     const rate = { easy:4, normal:7, hard:10 }[settings.cpu];
     if (Math.random() < rate / 60) inp.lightP = true;
     return inp;
@@ -1049,9 +1124,10 @@ function stepSelect(){
 }
 function stepSettings(){
   const i = merge(merge(keyInput(P1KEYS), keyInput(P2KEYS)), padInput(0));
+  if (setRow === 4 && (pressed.has("enter") || i.lightP || i.rightP)){ saveSettings(); if (IS_TOUCH) openTouchEditor(); else state = "controls"; return; }
   if (pressed.has("escape") || pressed.has("enter") || i.lightP){ saveSettings(); state = "menu"; return; }
-  if (i.upP) setRow = (setRow + 3) % 4;
-  if (i.downP) setRow = (setRow + 1) % 4;
+  if (i.upP) setRow = (setRow + 4) % 5;
+  if (i.downP) setRow = (setRow + 1) % 5;
   const d = i.leftP ? -1 : i.rightP ? 1 : 0;
   if (!d) return;
   if (setRow === 0){
@@ -1078,6 +1154,8 @@ function step(dt){
   if (net) netTick(dt);
   if (online && net && net.role === "guest" && (state === "playing" || state === "over")){ guestStep(dt); return; }
   if (state === "online"){ animT += dt; stepOnline(); return; }
+  if (state === "controls"){ animT += dt; stepControls(); return; }
+  if (state === "touchedit"){ animT += dt; if (pressed.has("escape")) state = "settings"; return; }
   stepCore(dt);
   if (isHost() && (state === "playing" || state === "over")) hostSend();
 }
@@ -1132,7 +1210,7 @@ function stepCore(dt){
     if (pressed.has("7")) P1.ult = T.ultMax;
   }
   if (online){ if (pressed.has("escape")){ leaveOnline(); return; } }
-  else if (pressed.has("p") || (pressed.has("escape") && !practice)) paused = !paused;
+  else if ((pressed.has("p") && !isBound("p")) || (pressed.has("escape") && !practice)) paused = !paused;
   if (paused) return;
   playTime += dt;
   shake *= 0.86;
@@ -1541,7 +1619,7 @@ function drawFighter(f){
   const otherTop = other ? other.y - (LOOK[other.stats.key] || { h:other.h }).h : topY;
   const tagY = crowded ? Math.min(topY, otherTop) - 12 - (f === P2 ? 18 : 0) : topY - 12;
   ctx.fillStyle = f.color; ctx.font = "bold 13px system-ui"; ctx.textAlign = "center";
-  if (!f.subbing && !f.subbedBy){                                  // dark outline keeps tags readable on bright stages
+  if (!f.subbing && !f.subbedBy && !f.scr && !f.scrBy){             // dark outline keeps tags readable on bright stages
     ctx.lineWidth = 4; ctx.strokeStyle = "rgba(11,14,19,0.9)"; ctx.lineJoin = "round";
     ctx.strokeText(f.tag + " " + f.name, f.x, tagY); ctx.fillText(f.tag + " " + f.name, f.x, tagY);
   }
@@ -1554,17 +1632,38 @@ function drawFighter(f){
     ctx.fillStyle = k > 0.8 ? "#FF4A4A" : f.color; roundRect(mx - bw/2, my - 4, bw * k, 12, 6); ctx.fill();
     ctx.fillStyle = "#FFFFFF"; ctx.fillRect(mx - bw/2 + bw - 2, my - 7, 3, 18);
     ctx.font = "bold 11px system-ui"; ctx.fillStyle = "#B7BFC9";
-    const key = p => IS_TOUCH ? "LIGHT" : online ? "F" : p === P1 ? "F" : "K";
+    const key = p => IS_TOUCH ? "LIGHT" : keyLabel((online || p === P1 ? P1KEYS : P2KEYS).light);
     const lines = [];
     if (!f.cpu) lines.push(f.tag + ": MASH " + key(f) + " TO FINISH");
     if (!v.cpu) lines.push(v.tag + ": MASH " + key(v) + " TO ESCAPE");
     ctx.fillText(lines.join("   ·   "), mx, my + 24);
   }
+  if (f.scr){                                                    // scramble meter: attacker pushes right, defender pushes left
+    const sc = f.scr, v = sc.v, mx = (f.x + v.x) / 2, my = f.y - 150, bw = 200;
+    ctx.fillStyle = "rgba(11,14,19,0.9)"; roundRect(mx - bw/2 - 10, my - 30, bw + 20, 66, 12); ctx.fill();
+    ctx.textAlign = "center"; ctx.fillStyle = "#FFFFFF"; ctx.font = "900 15px system-ui"; ctx.fillText("SCRAMBLE!", mx, my - 12);
+    const k = Math.max(0, Math.min(1, sc.m / 100));
+    ctx.fillStyle = v.color; roundRect(mx - bw/2, my - 4, bw, 12, 6); ctx.fill();
+    ctx.fillStyle = f.color; roundRect(mx - bw/2, my - 4, bw * k, 12, 6); ctx.fill();
+    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(mx - 1, my - 7, 2, 18);
+    ctx.font = "bold 11px system-ui"; ctx.fillStyle = "#B7BFC9";
+    const mk = p => IS_TOUCH ? "LIGHT" : keyLabel(online || p === P1 ? P1KEYS.light : P2KEYS.light);
+    const ln = [];
+    if (!f.cpu) ln.push(f.tag + ": MASH " + mk(f) + " TO HOLD ON");
+    if (!v.cpu) ln.push(v.tag + ": MASH " + mk(v) + " TO REVERSE");
+    ctx.fillText(ln.join("   ·   "), mx, my + 26);
+  }
+  if (f.grabbedBy && !f.cpu && (!online || (net && (net.role === "host" ? f === P1 : f === P2)))){
+    const hx = f.x, hy = f.y - (LOOK[f.stats.key] || { h:f.h }).h - 46;
+    ctx.fillStyle = "rgba(11,14,19,0.85)"; roundRect(hx - 105, hy - 16, 210, 24, 12); ctx.fill();
+    ctx.fillStyle = f.sprawlHold ? "#5AE68C" : "#BFE3FF"; ctx.font = "bold 12px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(f.sprawlHold ? "SPRAWL READY" : IS_TOUCH ? "HOLD STICK ↓ TO SPRAWL" : "HOLD " + keyLabel((online || f === P1 ? P1KEYS : P2KEYS).down) + " TO SPRAWL", hx, hy + 1);
+  }
   if (f.knockdown > 0 && f.onGround && !f.subbedBy && other && !other.cpu && !other.dead){
     const hy = f.y - 150;
     ctx.fillStyle = "rgba(11,14,19,0.88)"; roundRect(f.x - 100, hy - 17, 200, 26, 13); ctx.fill();
     ctx.fillStyle = "#C9A15A"; ctx.font = "900 13px system-ui";
-    ctx.fillText(IS_TOUCH ? "TAP GRAB TO SUBMIT!" : (online || other === P1 ? "R" : "I") + " — GRAB TO SUBMIT!", f.x, hy + 1);
+    ctx.fillText(IS_TOUCH ? "TAP GRAB TO SUBMIT!" : keyLabel((online || other === P1 ? P1KEYS : P2KEYS).grab) + " — GRAB TO SUBMIT!", f.x, hy + 1);
   }
   if (f.grabbing && !f.cpu){
     const hx = (f.x + f.grabbing.x) / 2, hy = topY - 52;
@@ -1629,7 +1728,7 @@ function drawHUD(){
     ctx.globalAlpha = pulse; ctx.fillStyle = full ? "#FFD36A" : f.color; roundRect(x + 12, y + 70, (cw - 24) * uk, 5, 3); ctx.fill(); ctx.globalAlpha = 1;
     if (full && !f.dead){
       const mineF = !online || (net && (net.role === "host" ? f === P1 : f === P2));
-      const keyName = f.cpu || (online && !mineF) ? "" : IS_TOUCH ? " — TAP ULT" : (f === P1 || online ? " — PRESS E" : " — PRESS U");
+      const keyName = f.cpu || (online && !mineF) ? "" : IS_TOUCH ? " — TAP ULT" : " — PRESS " + keyLabel((f === P1 || online ? P1KEYS : P2KEYS).ult);
       ctx.globalAlpha = pulse; ctx.fillStyle = "#FFD36A"; ctx.font = "900 12px system-ui"; ctx.textAlign = "center";
       ctx.fillText("★ ULTIMATE READY" + keyName, x + cw / 2, y - 8); ctx.globalAlpha = 1; ctx.textAlign = "left";
     }
@@ -1643,8 +1742,8 @@ function drawHUD(){
   if (playTime < 7 && !practice && !IS_TOUCH){
     ctx.globalAlpha = Math.min(1, 7 - playTime);
     ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.textAlign = "center";
-    ctx.fillText("P1: WASD move/jump · F light · G heavy · T signature · R grab (then a direction to throw) · hold H shield / H+dir roll", W/2, 30);
-    if (!P2.cpu && !online) ctx.fillText("P2: Arrows move/jump · K light · L heavy · O signature · I grab · hold J shield / J+dir roll", W/2, 50);
+    ctx.fillText("P1: " + ctrlLine(P1KEYS), W/2, 30);
+    if (!P2.cpu && !online) ctx.fillText("P2: " + ctrlLine(P2KEYS), W/2, 50);
     ctx.globalAlpha = 1;
   }
 }
@@ -1672,14 +1771,14 @@ function drawMenu(){
     return;
   }
   centerText("ROLLWARRIORS", 190, 64, "#C9A15A");
-  centerText("BRAWL · GAMEPLAY PROTOTYPE v17", 228, 18, "#8B95A3");
+  centerText("BRAWL · GAMEPLAY PROTOTYPE v18", 228, 18, "#8B95A3");
   centerText("Press 1 — vs CPU", 310, 26, "#EDEFF2");
   centerText("Press 2 — 2 Players (same keyboard)", 352, 26, "#EDEFF2");
   centerText("3 — Settings     ·     4 — Practice     ·     5 — ONLINE", 394, 20, "#C9A15A");
   const so = STAGE_OPTIONS.find(o => o.key === settings.stage);
   centerText("Stage: " + so.name + "   ·   Stocks: " + settings.stocks + "   ·   CPU: " + DIFFS[settings.cpu].name, 640, 14, "#5D6673", "normal");
-  centerText("P1: WASD move & jump · F light · G heavy · T signature · R grab · H shield/dodge · E ULTIMATE", 448, 15, "#B7BFC9", "normal");
-  centerText("P2: Arrows move & jump · K light · L heavy · O signature · I grab · J shield/dodge · U ULTIMATE", 472, 15, "#B7BFC9", "normal");
+  centerText("P1: " + ctrlLine(P1KEYS), 448, 15, "#B7BFC9", "normal");
+  centerText("P2: " + ctrlLine(P2KEYS), 472, 15, "#B7BFC9", "normal");
   centerText("Hold UP while attacking for up-attacks · hold DOWN to drop through platforms", 496, 15, "#B7BFC9", "normal");
   centerText("Controller: stick move · A jump · X light · B heavy · Y signature · LB grab · RB/LT shield · RT ultimate", 520, 15, "#B7BFC9", "normal");
   centerText("ATTACK beats GRAB · GRAB beats SHIELD · SHIELD beats ATTACK", 568, 18, "#C9A15A");
@@ -1767,15 +1866,17 @@ function drawSettings(){
     ["STOCKS (LIVES)", String(settings.stocks), settings.stocks === 1 ? "One life — sudden death" : settings.stocks + " lives each"],
     ["CPU DIFFICULTY", DIFFS[settings.cpu].name, settings.cpu === "easy" ? "Slow reactions, rarely blocks" : settings.cpu === "hard" ? "Fast reactions, blocks and dodges a lot" : "A fair fight"],
     ["SOUND", SOUND_NAMES[settings.sound] || "MEDIUM", settings.sound === "off" ? "Silent" : "Effects volume"],
+    ["CONTROLS", IS_TOUCH ? "CUSTOMIZE BUTTONS" : "REBIND KEYS", IS_TOUCH ? "Move & resize buttons" : "Choose your own keys"],
   ];
   rows.forEach(([label, val, sub], i) => {
-    const y = 160 + i * 100, x = 120, w = 620, sel = setRow === i;
-    if (IS_TOUCH){ uiArea(x, y, w / 2, 90, () => { setRow = i; pressed.add("a"); }); uiArea(x + w / 2, y, w / 2, 90, () => { setRow = i; pressed.add("d"); }); }
-    ctx.fillStyle = sel ? "rgba(201,161,90,0.14)" : "rgba(29,35,45,0.9)"; roundRect(x, y, w, 90, 14); ctx.fill();
-    if (sel){ ctx.strokeStyle = "#C9A15A"; ctx.lineWidth = 3; roundRect(x, y, w, 90, 14); ctx.stroke(); }
-    ctx.textAlign = "left"; ctx.fillStyle = "#8B95A3"; ctx.font = "bold 13px system-ui"; ctx.fillText(label, x + 24, y + 30);
-    ctx.fillStyle = "#EDEFF2"; ctx.font = "900 26px system-ui"; ctx.fillText((sel ? "◀  " : "") + val + (sel ? "  ▶" : ""), x + 24, y + 64);
-    ctx.textAlign = "right"; ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.fillText(sub, x + w - 24, y + 64);
+    const y = 140 + i * 86, x = 120, w = 620, sel = setRow === i, rh = 76;
+    if (i === 4) uiArea(x, y, w, rh, () => { setRow = 4; IS_TOUCH ? openTouchEditor() : (state = "controls"); });
+    else { uiArea(x, y, w / 2, rh, () => { setRow = i; pressed.add("a"); }); uiArea(x + w / 2, y, w / 2, rh, () => { setRow = i; pressed.add("d"); }); }
+    ctx.fillStyle = sel ? "rgba(201,161,90,0.14)" : "rgba(29,35,45,0.9)"; roundRect(x, y, w, rh, 14); ctx.fill();
+    if (sel){ ctx.strokeStyle = "#C9A15A"; ctx.lineWidth = 3; roundRect(x, y, w, rh, 14); ctx.stroke(); }
+    ctx.textAlign = "left"; ctx.fillStyle = "#8B95A3"; ctx.font = "bold 13px system-ui"; ctx.fillText(label, x + 24, y + 26);
+    ctx.fillStyle = i === 4 ? "#FFD36A" : "#EDEFF2"; ctx.font = "900 24px system-ui"; ctx.fillText(i === 4 ? val + "  ›" : (sel ? "◀  " : "") + val + (sel ? "  ▶" : ""), x + 24, y + 56);
+    ctx.textAlign = "right"; ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.fillText(sub, x + w - 24, y + 56);
   });
   // stage preview
   const px = 790, py = 180, pw = 370, ph = 208;
@@ -1794,7 +1895,7 @@ function drawSettings(){
     ctx.fillStyle = "#8B95A3"; for (const p of st.plats) ctx.fillRect(lx + p.x * sc, ly + (p.y - 150) * sc, p.w * sc, 3);
   } else { ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("Stage decided when the match starts", px + pw/2, ly + 40); }
   if (IS_TOUCH){ centerText("Tap the left or right side of a setting to change it", 600, 15, "#8B95A3", "normal"); uiBtn(W/2 - 110, 626, 220, 54, "SAVE & BACK", () => pressed.add("escape"), { gold:true }); }
-  else { centerText("W / S choose setting   ·   A / D change   ·   F or Esc to save", 600, 15, "#8B95A3", "normal");
+  else { centerText("W / S choose setting   ·   A / D change   ·   F or Esc to save   ·   or click", 600, 15, "#8B95A3", "normal");
          centerText("Settings are saved on this device.", 626, 13, "#5D6673", "normal"); }
 }
 function drawBoxes(){
@@ -1852,7 +1953,7 @@ function drawMoveList(){
     ["MOVEMENT", ""],
     ["Stick", "move · aim up / down"],
     ["JUMP", "jump (x" + S.jumps + ")"],
-    ["Stick down", "fast-fall · hold to drop through"],
+    ["Stick down", "fast-fall · drop through · sprawl"],
     ["SHIELD (hold)", "block · + stick = roll"],
     ["ATTACKS", ""],
     ["LIGHT", "light attack"], ["HEAVY", "heavy attack"],
@@ -1865,23 +1966,23 @@ function drawMoveList(){
     ["GRAB on pinned", "submit: " + S.sub + " (mash LIGHT)"],
     ["ULTIMATE", ""],
     ["ULT (glowing)", S.ult + " — taps at 80%+"],
-  ] : [
+  ] : (() => { const K = P1KEYS, k = keyLabel; return [
     ["MOVEMENT", ""],
-    ["W / D / A", "jump (x" + S.jumps + ") · move"],
-    ["S", "fast-fall · hold to drop through"],
-    ["H (hold)", "shield · H + direction = roll"],
+    [k(K.jump || K.up) + " / " + k(K.left) + " / " + k(K.right), "jump (x" + S.jumps + ") · move"],
+    [k(K.down), "fast-fall · hold to drop · sprawl"],
+    [k(K.dodge) + " (hold)", "shield · + direction = roll"],
     ["ATTACKS", ""],
-    ["F", "light attack"], ["G", "heavy attack"],
-    ["W + F / W + G", "up light / up heavy"],
-    ["T", "★ " + S.sigName],
+    [k(K.light), "light attack"], [k(K.heavy), "heavy attack"],
+    [k(K.up) + " + " + k(K.light) + " / " + k(K.heavy), "up light / up heavy"],
+    [k(K.sig), "★ " + S.sigName],
     ["GRAPPLING", ""],
-    ["R", "grab (beats shields)"],
-    ["R then →", "Double Leg"], ["R then ←", "Hip Throw"],
-    ["R then ↑", "Suplex"], ["R then ↓", "Takedown → pins them"],
-    ["R on pinned", "submit: " + S.sub + " (mash F)"],
+    [k(K.grab), "grab (beats shields)"],
+    [k(K.grab) + " then →/←", "Double Leg / Hip Throw"],
+    [k(K.grab) + " then ↑/↓", "Suplex / Takedown"],
+    [k(K.grab) + " on pinned", "submit: " + S.sub + " (mash " + k(K.light) + ")"],
     ["ULTIMATE", ""],
-    ["E (bar full)", "★ " + S.ult + " — taps at 80%+"],
-  ];
+    [k(K.ult) + " (bar full)", "★ " + S.ult + " — taps at 80%+"],
+  ]; })();
   ctx.fillStyle = "rgba(11,14,19,0.88)"; roundRect(x, y, w, 26 + lines.length * 19, 14); ctx.fill();
   ctx.textAlign = "left";
   ctx.fillStyle = P1.color; ctx.font = "900 14px system-ui"; ctx.fillText(P1.name + " — MOVE LIST", x + 14, y + 22);
@@ -1982,6 +2083,8 @@ function drawInner(){
   ctx.save();
   if (state === "settings"){ drawSettings(); ctx.restore(); return; }
   if (state === "online"){ drawOnline(); ctx.restore(); return; }
+  if (state === "controls"){ drawControls(); ctx.restore(); return; }
+  if (state === "touchedit"){ drawTouchEditor(); ctx.restore(); return; }
   if (state === "menu"){ drawMenu(); ctx.restore(); return; }
   if (state === "select"){ drawSelect(); ctx.restore(); return; }
   const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
@@ -2053,25 +2156,34 @@ function onTouchStart(e){
     const p = toCanvas(t);
     const hit = (howto ? ui.slice(-1) : [...ui].reverse()).find(u => p.x >= u.x && p.x <= u.x + u.w && p.y >= u.y && p.y <= u.y + u.h);
     if (hit){ playSfx("ui"); hit.onTap(); continue; }
+    if (state === "touchedit"){ edStart(t, p); continue; }
     if (!fighting()) continue;
     const b = Object.entries(TB).find(([, v]) => Math.hypot(p.x - v.x, p.y - v.y) <= v.r * 1.18);
     if (b){ touch.btn.set(t.identifier, b[0]); touch.held.add(b[0]); touch.edges.add(b[0]); continue; }
-    if (p.x < W * 0.5 && touch.stick === null){ touch.stick = t.identifier; touch.sx = p.x; touch.sy = p.y; touch.dx = 0; touch.dy = 0; }
+    if (touch.stick !== null) continue;
+    if (touchCfg.mode === "fixed"){
+      if (Math.hypot(p.x - touchCfg.sx, p.y - touchCfg.sy) <= 150){ touch.stick = t.identifier; touch.sx = touchCfg.sx; touch.sy = touchCfg.sy; touch.dx = p.x - touch.sx; touch.dy = p.y - touch.sy; }
+    } else if (p.x < W * 0.5){ touch.stick = t.identifier; touch.sx = p.x; touch.sy = p.y; touch.dx = 0; touch.dy = 0; }
   }
 }
 function onTouchMove(e){
   e.preventDefault();
   for (const t of e.changedTouches){
+    if (state === "touchedit"){ edMove(t, toCanvas(t)); continue; }
     if (t.identifier !== touch.stick) continue;
     const p = toCanvas(t); let dx = p.x - touch.sx, dy = p.y - touch.sy; const m = Math.hypot(dx, dy), R = 80;
-    if (m > R){ touch.sx += dx * (1 - R / m); touch.sy += dy * (1 - R / m); dx = p.x - touch.sx; dy = p.y - touch.sy; }   // stick follows your thumb
+    if (m > R){
+      if (touchCfg.mode === "fixed"){ dx *= R / m; dy *= R / m; }
+      else { touch.sx += dx * (1 - R / m); touch.sy += dy * (1 - R / m); dx = p.x - touch.sx; dy = p.y - touch.sy; }
+    }
     touch.dx = dx; touch.dy = dy;
   }
 }
 function onTouchEnd(e){
   e.preventDefault();
   for (const t of e.changedTouches){
-    if (t.identifier === touch.stick){ touch.stick = null; touch.dx = 0; touch.dy = 0; }
+    if (t.identifier === ed.dragId) ed.dragId = null;
+    if (t.identifier === touch.stick){ touch.stick = null; touch.dx = 0; touch.dy = 0; touch.sx = touchCfg.sx; touch.sy = touchCfg.sy; }
     const b = touch.btn.get(t.identifier); if (b){ touch.btn.delete(t.identifier); if (![...touch.btn.values()].includes(b)) touch.held.delete(b); }
   }
 }
@@ -2109,12 +2221,13 @@ function drawTouchFight(){
   const me = online && net && net.role === "guest" ? P2 : P1;
   // joystick
   const active = touch.stick !== null;
-  ctx.globalAlpha = active ? 0.9 : 0.35;
+  ctx.globalAlpha = (active ? 0.9 : 0.35) * touchCfg.opacity;
   ctx.fillStyle = "rgba(20,24,31,0.55)"; ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.arc(touch.sx, touch.sy, 80, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   ctx.fillStyle = "rgba(255,255,255,0.75)"; ctx.beginPath(); ctx.arc(touch.sx + touch.dx, touch.sy + touch.dy, 34, 0, Math.PI * 2); ctx.fill();
   ctx.globalAlpha = 1;
   // buttons
+  ctx.globalAlpha = touchCfg.opacity;
   for (const [k, b] of Object.entries(TB)){
     const held = touch.held.has(k);
     let fill = held ? "rgba(201,161,90,0.75)" : "rgba(20,24,31,0.6)", edge = "rgba(255,255,255,0.4)", txt = "#EDEFF2";
@@ -2130,6 +2243,7 @@ function drawTouchFight(){
     ctx.fillStyle = txt; ctx.textAlign = "center"; ctx.font = `900 ${b.label.length > 4 ? 13 : 16}px system-ui`;
     ctx.fillText(b.label, b.x, b.y + 5);
   }
+  ctx.globalAlpha = 1;
   // pause / leave
   uiBtn(14, 12, 104, 40, online ? "✕ LEAVE" : "❚❚ MENU", () => pressed.add(online || practice ? "escape" : "p"), { size:15 });
   if (practice){
@@ -2203,6 +2317,121 @@ function drawRotateHint(){
   centerText("↻", H/2 - 20, 300, "#C9A15A");
   centerText("Turn your phone", H/2 + 150, 96, "#EDEFF2");
   centerText("sideways to play", H/2 + 260, 96, "#EDEFF2");
+}
+
+
+// ═══ Controls screen (keyboard): rebind any action ═══
+const ACTIONS = [["left","Move left"],["right","Move right"],["up","Aim up"],["down","Aim down · drop · sprawl"],["jump","Jump"],
+  ["light","Light attack"],["heavy","Heavy attack"],["dodge","Shield / dodge"],["grab","Grab"],["sig","★ Signature"],["ult","Ultimate"]];
+let ctl = { player:1, row:0, waiting:false, msg:"" };
+function assignKey(k){
+  const K = ctl.player === 1 ? P1KEYS : P2KEYS, act = ACTIONS[ctl.row][0], old = K[act];
+  for (const [a2] of ACTIONS) if (a2 !== act && K[a2] === k) K[a2] = old;       // key already used? swap them
+  K[act] = k; saveKeys(); playSfx("confirm");
+  ctl.msg = ACTIONS[ctl.row][1] + " → " + keyLabel(k);
+}
+function stepControls(){
+  if (ctl.waiting) return;
+  if (pressed.has("escape")){ saveKeys(); state = "settings"; return; }
+  if (pressed.has("arrowdown")) ctl.row = (ctl.row + 1) % ACTIONS.length;
+  if (pressed.has("arrowup")) ctl.row = (ctl.row + ACTIONS.length - 1) % ACTIONS.length;
+  if (pressed.has("arrowleft") || pressed.has("arrowright") || pressed.has("tab")) ctl.player = ctl.player === 1 ? 2 : 1;
+  if (pressed.has("enter")) ctl.waiting = true;
+  if (pressed.has("backspace")){ Object.assign(ctl.player === 1 ? P1KEYS : P2KEYS, DEFAULT_KEYS[ctl.player]); saveKeys(); ctl.msg = "Player " + ctl.player + " reset to defaults"; }
+}
+function drawControls(){
+  drawBackground();
+  centerText("CONTROLS", 58, 38, "#C9A15A");
+  [1, 2].forEach(pl => {
+    const x = W/2 - 150 + (pl - 1) * 160, on = ctl.player === pl;
+    ctx.fillStyle = on ? "#C9A15A" : "rgba(29,35,45,0.9)"; roundRect(x, 78, 140, 34, 17); ctx.fill();
+    ctx.fillStyle = on ? "#14181F" : "#B7BFC9"; ctx.font = "900 14px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(pl === 1 ? "PLAYER 1" : "PLAYER 2", x + 70, 100);
+    uiArea(x, 78, 140, 34, () => { ctl.player = pl; });
+  });
+  const K = ctl.player === 1 ? P1KEYS : P2KEYS, x0 = W/2 - 300, rh = 42;
+  ACTIONS.forEach(([act, name], i) => {
+    const y = 126 + i * rh, sel = ctl.row === i;
+    ctx.fillStyle = sel ? "rgba(201,161,90,0.16)" : "rgba(29,35,45,0.85)"; roundRect(x0, y, 600, rh - 6, 10); ctx.fill();
+    if (sel){ ctx.strokeStyle = "#C9A15A"; ctx.lineWidth = 2; roundRect(x0, y, 600, rh - 6, 10); ctx.stroke(); }
+    ctx.textAlign = "left"; ctx.fillStyle = "#EDEFF2"; ctx.font = "bold 16px system-ui"; ctx.fillText(name, x0 + 18, y + 24);
+    const waiting = sel && ctl.waiting, label = waiting ? "PRESS A KEY…" : keyLabel(K[act]);
+    ctx.fillStyle = waiting ? "#FFD36A" : "#14181F"; roundRect(x0 + 430, y + 4, 156, rh - 14, 8); ctx.fill();
+    ctx.fillStyle = waiting ? "#14181F" : "#FFD36A"; ctx.font = "900 15px system-ui"; ctx.textAlign = "center"; ctx.fillText(label, x0 + 508, y + 24);
+    uiArea(x0, y, 600, rh - 6, () => { ctl.row = i; ctl.waiting = true; });
+  });
+  centerText(ctl.msg || "Tip: set Jump to SPACE so W only aims (no accidental jumps on up-attacks)", 612, 15, ctl.msg ? "#5AE68C" : "#8B95A3", ctl.msg ? "bold" : "normal");
+  centerText("Click a row (or ↑ ↓ + Enter), then press the new key · if it's already used, the two swap", 640, 14, "#8B95A3", "normal");
+  uiBtn(W/2 - 320, 660, 200, 44, "RESET DEFAULTS", () => pressed.add("backspace"), { size:14 });
+  uiBtn(W/2 + 120, 660, 200, 44, "SAVE & BACK", () => pressed.add("escape"), { gold:true, size:15 });
+}
+if (typeof window !== "undefined" && !IS_TOUCH && cv.addEventListener){
+  cv.addEventListener("mousedown", e => {
+    const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
+    const hit = [...ui].reverse().find(u => x >= u.x && x <= u.x + u.w && y >= u.y && y <= u.y + u.h);
+    if (hit){ ensureAudio(); playSfx("ui"); hit.onTap(); }
+  });
+}
+
+// ═══ Phone button layout: drag, resize, stick mode, opacity — saved on the device ═══
+const TB_DEFAULT = JSON.parse(JSON.stringify(TB));
+const touchCfg = { mode:"floating", sx:170, sy:560, opacity:1 };
+const CFG_DEFAULT = { ...touchCfg };
+try {
+  const sv = JSON.parse(localStorage.getItem("rw_touch_layout") || "null");
+  if (sv){ for (const k in sv.buttons || {}) if (TB[k]) Object.assign(TB[k], sv.buttons[k]); Object.assign(touchCfg, sv.cfg || {}); }
+} catch(e){}
+touch.sx = touchCfg.sx; touch.sy = touchCfg.sy;
+function saveTouchLayout(){
+  const buttons = {}; for (const k in TB) buttons[k] = { x:TB[k].x, y:TB[k].y, r:TB[k].r };
+  try { localStorage.setItem("rw_touch_layout", JSON.stringify({ buttons, cfg:touchCfg })); } catch(e){}
+}
+let ed = { sel:null, dragId:null, offx:0, offy:0, backup:null };
+function openTouchEditor(){ ed.backup = JSON.stringify({ TB, touchCfg }); ed.sel = null; ed.dragId = null; state = "touchedit"; }
+function edPick(p){
+  for (const [k, b] of Object.entries(TB)) if (Math.hypot(p.x - b.x, p.y - b.y) <= b.r * 1.15) return k;
+  if (Math.hypot(p.x - touchCfg.sx, p.y - touchCfg.sy) <= 90) return "stick";
+  return null;
+}
+function edStart(t, p){
+  const k = edPick(p); if (!k) return;
+  ed.sel = k; ed.dragId = t.identifier;
+  const c = k === "stick" ? { x:touchCfg.sx, y:touchCfg.sy } : TB[k];
+  ed.offx = c.x - p.x; ed.offy = c.y - p.y;
+}
+function edMove(t, p){
+  if (t.identifier !== ed.dragId || !ed.sel) return;
+  const x = Math.max(40, Math.min(W - 40, p.x + ed.offx)), y = Math.max(70, Math.min(H - 30, p.y + ed.offy));
+  if (ed.sel === "stick"){ touchCfg.sx = x; touchCfg.sy = y; touch.sx = x; touch.sy = y; } else { TB[ed.sel].x = x; TB[ed.sel].y = y; }
+}
+function drawTouchEditor(){
+  drawBackground();
+  ctx.fillStyle = "rgba(5,7,10,0.55)"; ctx.fillRect(0, 0, W, H);
+  centerText("DRAG ANY BUTTON ANYWHERE", 108, 22, "#FFD36A", "900");
+  centerText(ed.sel ? "Selected: " + (ed.sel === "stick" ? "JOYSTICK" : TB[ed.sel].label) + (ed.sel !== "stick" ? "  ·  use SIZE − / + to resize" : "") : "Tap a button to select it", 134, 15, "#B7BFC9", "normal");
+  ctx.globalAlpha = touchCfg.opacity;
+  ctx.fillStyle = "rgba(20,24,31,0.6)"; ctx.strokeStyle = ed.sel === "stick" ? "#FFD36A" : "rgba(255,255,255,0.45)"; ctx.lineWidth = ed.sel === "stick" ? 5 : 3;
+  ctx.beginPath(); ctx.arc(touchCfg.sx, touchCfg.sy, 80, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.75)"; ctx.beginPath(); ctx.arc(touchCfg.sx, touchCfg.sy, 34, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#EDEFF2"; ctx.font = "bold 12px system-ui"; ctx.textAlign = "center";
+  ctx.fillText(touchCfg.mode === "fixed" ? "FIXED STICK" : "FLOATING STICK", touchCfg.sx, touchCfg.sy + 104);
+  for (const [k, b] of Object.entries(TB)){
+    ctx.fillStyle = "rgba(20,24,31,0.7)"; ctx.strokeStyle = ed.sel === k ? "#FFD36A" : "rgba(255,255,255,0.45)"; ctx.lineWidth = ed.sel === k ? 5 : 2.5;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#EDEFF2"; ctx.textAlign = "center"; ctx.font = `900 ${b.label.length > 4 ? 13 : 16}px system-ui`; ctx.fillText(b.label, b.x, b.y + 5);
+  }
+  ctx.globalAlpha = 1;
+  const tools = [
+    ["SIZE −", () => { if (ed.sel && ed.sel !== "stick") TB[ed.sel].r = Math.max(26, TB[ed.sel].r - 4); }],
+    ["SIZE +", () => { if (ed.sel && ed.sel !== "stick") TB[ed.sel].r = Math.min(72, TB[ed.sel].r + 4); }],
+    ["STICK: " + (touchCfg.mode === "fixed" ? "FIXED" : "FLOATING"), () => { touchCfg.mode = touchCfg.mode === "fixed" ? "floating" : "fixed"; }],
+    ["OPACITY " + Math.round(touchCfg.opacity * 100) + "%", () => { const o = [1, 0.8, 0.6, 0.4]; touchCfg.opacity = o[(o.indexOf(touchCfg.opacity) + 1) % o.length]; }],
+    ["RESET", () => { for (const k in TB) Object.assign(TB[k], TB_DEFAULT[k]); Object.assign(touchCfg, CFG_DEFAULT); touch.sx = touchCfg.sx; touch.sy = touchCfg.sy; ed.sel = null; }],
+    ["CANCEL", () => { const b = JSON.parse(ed.backup); for (const k in TB) Object.assign(TB[k], b.TB[k]); Object.assign(touchCfg, b.touchCfg); touch.sx = touchCfg.sx; touch.sy = touchCfg.sy; state = "settings"; }],
+    ["SAVE ✓", () => { saveTouchLayout(); state = "settings"; }],
+  ];
+  const tw = 150, gap = 10, x0 = (W - (tools.length * tw + (tools.length - 1) * gap)) / 2;
+  tools.forEach(([lb, fn], i) => uiBtn(x0 + i * (tw + gap), 16, tw, 46, lb, fn, { gold: i === tools.length - 1, size:14 }));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2350,13 +2579,14 @@ const ref = f => f === P1 ? 1 : f === P2 ? 2 : 0;
 const deref = n => n === 1 ? P1 : n === 2 ? P2 : null;
 const SYNC_F = ["x","y","vx","vy","facing","onGround","dmg","stocks","attack","atkT","hitstun","knockdown","dizzy","dodgeT","invuln","flash",
   "shielding","shieldHP","sigCD","ult","dead","respawnT","spin","landT","squeezeT","pose","grabT","jumps",
-  "dodgeCD","airDodged","dropT","downHeld","wasShielding","fired"];
+  "dodgeCD","airDodged","dropT","downHeld","wasShielding","fired","sprawlHold"];
 function serF(f){
   const o = {}; for (const k of SYNC_F) o[k] = f[k];
   o.gb = ref(f.grabbing); o.gd = ref(f.grabbedBy); o.tb = ref(f.thrownBy); o.sb = ref(f.subbedBy);
   o.th = f.throwing ? { kind:f.throwing.kind, t:f.throwing.t, dur:f.throwing.dur } : null;
   o.su = f.subbing ? { meter:f.subbing.meter, name:f.subbing.name, t:f.subbing.t } : null;
   o.gi = PLATS.indexOf(f.ground); o.hi = [...(f.hitIds || [])].map(ref);
+  o.sc = f.scr ? { m:f.scr.m, t:f.scr.t } : null; o.scb = ref(f.scrBy);
   return o;
 }
 function applyF(f, o){
@@ -2366,6 +2596,7 @@ function applyF(f, o){
   f.throwing = o.th ? { ...o.th, v:other } : null;
   f.subbing = o.su ? { ...o.su, v:other } : null;
   f.ground = o.gi >= 0 ? PLATS[o.gi] : null; f.hitIds = new Set((o.hi || []).map(deref));
+  f.scr = o.sc ? { ...o.sc, v:other } : null; f.scrBy = deref(o.scb);
 }
 function hostSnapshot(){
   return { k:"s", n:++net.frame, ak:net.rin.ack || 0, st:state, w:ref(winner), pt:playTime, sh:shake, fl:impactFlash,
