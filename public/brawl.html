@@ -2,12 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>RollWarriors — Brawl Prototype</title>
 <style>
   html, body { margin:0; height:100%; background:#0B0E13; overflow:hidden; font-family:system-ui, -apple-system, Segoe UI, sans-serif; }
   #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
-  canvas { display:block; background:#0B0E13; }
+  canvas { display:block; background:#0B0E13; touch-action:none; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  html, body { overscroll-behavior:none; -webkit-tap-highlight-color:transparent; }
 </style>
 </head>
 <body>
@@ -310,7 +311,8 @@ const STAGE_OPTIONS = [
 ];
 const DIFFS = { easy:{ name:"EASY", react:1.9, def:0.4 }, normal:{ name:"NORMAL", react:1.0, def:1.0 }, hard:{ name:"HARD", react:0.5, def:1.9 } };
 const DIFF_KEYS = ["easy", "normal", "hard"];
-let settings = { stage:"home", stocks:3, cpu:"normal" };
+let settings = { stage:"home", stocks:3, cpu:"normal", sound:"med" };
+const SOUND_KEYS = ["off", "low", "med", "high"], SOUND_NAMES = { off:"OFF", low:"LOW", med:"MEDIUM", high:"HIGH" };
 try { const sv = JSON.parse(localStorage.getItem("rw_brawl_settings") || "null"); if (sv) settings = { ...settings, ...sv }; } catch(e) {}
 function saveSettings(){ try { localStorage.setItem("rw_brawl_settings", JSON.stringify(settings)); } catch(e) {} }
 let setRow = 0;
@@ -352,6 +354,7 @@ function startGame(){
   parts.length = 0; projs.length = 0; floats.length = 0; cine = null;
   winner = null; paused = false; hitstop = 0; shake = 0; playTime = 0;
   state = "playing";
+  sfx("start");
 }
 function goSelect(){ pick.p1ok = false; pick.p2ok = false; state = "select"; }
 const approach = (v, t, amt) => v < t ? Math.min(v + amt, t) : Math.max(v - amt, t);
@@ -361,6 +364,8 @@ function popText(text, x, y, color){ floats.push({ text, x, y, color, life:0.9 }
 
 function startAttack(f, name){
   f.attack = name; f.atkT = 0; f.fired = false; f.hitIds = new Set();
+  if (name === "light" || name === "upLight") sfx("swing");
+  else if (name === "heavy" || name === "upHeavy" || (name.startsWith("sig_") && !ATTACKS[name].projectile && !ATTACKS[name].mount)) sfx("heavySwing");
   if (practice && f === P1 && !ATTACKS[name].noHit) lastMove = name;
 }
 
@@ -416,7 +421,7 @@ function updateFighter(f, inp, dt){
   else if (!stunned && !f.shielding && !f.attack && (inp.dodgeP || rollOut) && f.dodgeCD <= 0 && !(f.airDodged && !f.onGround)){
     const dir = inp.left ? -1 : inp.right ? 1 : 0;
     if (!f.onGround || dir !== 0){
-      f.dodgeT = T.dodgeTime; f.dodgeCD = T.dodgeCooldown; f.invuln = Math.max(f.invuln, T.dodgeTime);
+      f.dodgeT = T.dodgeTime; f.dodgeCD = T.dodgeCooldown; f.invuln = Math.max(f.invuln, T.dodgeTime); sfx("dodge");
       f.vx = dir * T.dodgeSpeed;
       if (!f.onGround){ f.vy = inp.up ? -420 : inp.down ? 420 : f.vy * 0.2; f.airDodged = true; }
     }
@@ -439,7 +444,7 @@ function updateFighter(f, inp, dt){
 
     if (!f.attack && inp.ultP && f.ult >= T.ultMax){
       f.ult = 0; startAttack(f, "ult");
-      popText("ULTIMATE!", f.x, f.y - 150, f.color);
+      popText("ULTIMATE!", f.x, f.y - 150, f.color); sfx("ultFire");
       sparks(f.x, f.y - 50, f.color, 26, 380); sparks(f.x, f.y - 50, "#FFE9B0", 16, 300);
       hitstop = 0.12; shake = Math.max(shake, 8);
     }
@@ -448,7 +453,7 @@ function updateFighter(f, inp, dt){
       else if (inp.sigP && f.sigCD <= 0){
         startAttack(f, S.sig); const SA = ATTACKS[S.sig]; f.sigCD = SA.cd;
         if (SA.hop && f.onGround){ f.vy = SA.hop; f.onGround = false; }
-        if (SA.mount){ popText("CAVALRY!", f.x, f.y - 150, f.color); sparks(f.x, f.y, "#C8B08A", 14, 240); }
+        if (SA.mount){ popText("CAVALRY!", f.x, f.y - 150, f.color); sparks(f.x, f.y, "#C8B08A", 14, 240); sfx("cavalry"); }
       }
       else if (inp.lightP || inp.heavyP) startAttack(f, inp.heavyP ? (inp.up ? "upHeavy" : "heavy") : (inp.up ? "upLight" : "light"));
     }
@@ -460,7 +465,7 @@ function updateFighter(f, inp, dt){
   if (canAct && inp.jumpP && f.jumps > 0 && !f.attack){
     f.shielding = false;
     const wasGround = f.onGround;
-    f.vy = -(wasGround ? T.jumpVel : T.doubleJumpVel) * S.jump; f.jumps--; f.onGround = false;
+    f.vy = -(wasGround ? T.jumpVel : T.doubleJumpVel) * S.jump; f.jumps--; f.onGround = false; sfx("jump");
     if (!wasGround) sparks(f.x, f.y, "#C9A15A", 5, 160);
   }
 
@@ -471,6 +476,7 @@ function updateFighter(f, inp, dt){
     if (A.dash && inActive){ f.vx = f.facing * A.dash; if (f.vy > 0) f.vy *= 0.5; }
     if (A.dive && inActive){ f.vx = f.facing * A.dive.vx; f.vy = A.dive.vy; }
     if (A.mount && inActive && f.onGround && Math.random() < 0.5) sparks(f.x - f.facing * 40, f.y, "#C8B08A", 2, 160);   // hoof dust
+    if (A.mount && f.atkT >= A.startup * 0.6 && f.atkT <= A.startup + A.active && Math.floor(f.atkT * 9) !== Math.floor((f.atkT - dt) * 9)) sfx("gallop");
     if (A.invulnActive && inActive) f.invuln = Math.max(f.invuln, 0.03);
     if (A.projectile && !f.fired && f.atkT >= A.startup){ f.fired = true; spawnArrow(f, A); }
     if (f.atkT > A.startup + A.active + A.recovery) f.attack = null;
@@ -533,7 +539,7 @@ function checkHits(a, b){
     if (b.knockdown > 0 && b.onGround && !b.invuln){ a.hitIds.add(b); startSub(a, b); return; }   // pinned → submit
     if (b.invuln > 0 || b.dodgeT > 0 || !b.onGround || b.grabbing) return;
     a.hitIds.add(b); a.attack = null; a.grabbing = b; a.grabT = 0; b.facing = -a.facing;
-    sparks(a.x + a.facing * 30, a.y - 50, "#FFFFFF", 8, 180); hitstop = 0.05;
+    sparks(a.x + a.facing * 30, a.y - 50, "#FFFFFF", 8, 180); hitstop = 0.05; sfx("grab");
     b.grabbedBy = a; b.attack = null; b.shielding = false; b.hitstun = 0; b.knockdown = 0; b.dizzy = 0;
     return;
   }
@@ -549,15 +555,19 @@ function applyHit(a, b, A, dir){
   const pw = a.stats.power;
   if (practice && b === P2) combo = (b.hitstun > 0 || b.knockdown > 0) ? combo + 1 : 1;
   const comboBonus = (b.hitstun > 0 || b.knockdown > 0) ? 1.5 : 1;          // combos charge the ultimate faster
+  const wasReady = a.ult >= T.ultMax;
   a.ult = Math.min(T.ultMax, a.ult + A.dmg * pw * T.ultDealt * comboBonus);
+  if (!wasReady && a.ult >= T.ultMax) sfx("ultReady");
   b.ult = Math.min(T.ultMax, b.ult + A.dmg * pw * T.ultTaken);
   b.dmg += A.dmg * pw;
   if (b.grabbing){ b.grabbing.grabbedBy = null; b.grabbing = null; }
   if (hasArmor(b)){                                         // armored: take damage, don't flinch
+    sfx("armor");
     b.flash = 0.1; hitstop = 0.03; shake = Math.max(shake, 4);
     sparks(b.x, b.y - b.h/2, "#FFFFFF", 8, 240); return;
   }
   const kb = (A.base + b.dmg * A.scale) * pw / b.stats.weight;
+  sfx("hit", Math.min(1, kb / 1400));
   if (practice && b === P2) lastHit = { name: moveName(A), dmg: A.dmg * pw, kb: Math.round(kb), total: b.dmg };
   const ang = A.angle * Math.PI / 180;
   b.vx = Math.cos(ang) * kb * dir; b.vy = -Math.sin(ang) * kb;
@@ -570,6 +580,7 @@ function applyHit(a, b, A, dir){
   sparks(b.x, b.y - b.h/2, a.color, 6, 300);
 }
 function shieldHit(b, A, dir, a){
+  sfx("shieldHit");
   b.shieldHP -= A.dmg * 2.4 * (a ? a.stats.power : 1);
   b.vx = dir * 170;
   if (a) a.vx = -dir * 110;
@@ -578,6 +589,7 @@ function shieldHit(b, A, dir, a){
   if (b.shieldHP <= 0) breakShield(b);
 }
 function breakShield(f){
+  sfx("shieldBreak");
   f.shielding = false; f.shieldHP = 40; f.dizzy = T.shieldBreakStun;
   f.vy = -520; f.onGround = false; shake = Math.max(shake, 10);
   popText("SHIELD BREAK!", f.x, f.y - f.h - 30, "#BFE3FF");
@@ -588,7 +600,7 @@ function doThrow(f, dirKey){
   const v = f.grabbing; f.grabbing = null; v.grabbedBy = null;
   f.throwing = { kind:dirKey, t:0, dur:THROWS[dirKey].dur, v, x0:f.x, y0:f.y, d:f.facing, impact:false };
   v.thrownBy = f;
-  popText(THROWS[dirKey].name, (f.x + v.x) / 2, f.y - 140, f.color);
+  popText(THROWS[dirKey].name, (f.x + v.x) / 2, f.y - 140, f.color); sfx("throw");
 }
 // Keyframed throw animations. d = direction the thrower faced when the throw started.
 function updateThrow(f, dt){
@@ -631,7 +643,7 @@ function updateThrow(f, dt){
       f.x = th.x0 + d * 28 * ease(slam);
       f.pose = { lean: 0.15 + 0.25 * slam, sy: 1 - 0.2 * slam, sx: 1 + 0.1 * slam };
       if (!th.impact && k >= 0.6){
-        th.impact = true; shake = Math.max(shake, 12); hitstop = 0.06;
+        th.impact = true; shake = Math.max(shake, 12); hitstop = 0.06; sfx("slam");
         sparks(v.x, th.y0, "#C8B08A", 22, 300); sparks(v.x, th.y0 - 10, "#FFFFFF", 8, 200);
       }
       break;
@@ -644,12 +656,12 @@ let cine = null, impactFlash = 0;
 function startCine(a, b){
   releaseGrabs(a); releaseGrabs(b);
   a.attack = null; a.vx = a.vy = 0; b.vx = b.vy = 0; b.shielding = false; b.attack = null;
-  cine = { a, b, t:0, dur:T.cineTime };
+  cine = { a, b, t:0, dur:T.cineTime }; sfx("cineHit");
   shake = 0;
 }
 function resolveCine(){
   const { a, b } = cine; cine = null;
-  impactFlash = 0.9;
+  impactFlash = 0.9; sfx("hit", 1);
   b.dmg += T.ultDamage * a.stats.power;
   if (b.dmg >= T.ultFinishAt){
     popText("TAP! " + a.stats.ult, b.x, b.y - 160, a.color);
@@ -672,14 +684,14 @@ function startSub(a, v){
   a.facing = v.x >= a.x ? 1 : -1;
   a.x = v.x - a.facing * 30; a.y = v.y;
   v.pose = { rot: -Math.PI / 2, pivot: "feet" };
-  popText(a.stats.sub + "!", (a.x + v.x) / 2, a.y - 150, a.color);
+  popText(a.stats.sub + "!", (a.x + v.x) / 2, a.y - 150, a.color); sfx("subStart");
   hitstop = 0.08; shake = Math.max(shake, 6);
 }
 function updateSub(a, inp, dt){
   const sb = a.subbing, v = sb.v;
   sb.t += dt;
   a.vx = a.vy = 0; v.vx = v.vy = 0;
-  if (inp.lightP || inp.heavyP){ sb.meter += T.subPress * a.stats.subPower; a.squeezeT = 0.1; }
+  if (inp.lightP || inp.heavyP){ sb.meter += T.subPress * a.stats.subPower; a.squeezeT = 0.1; sfx("squeeze"); }
   a.squeezeT = Math.max(0, a.squeezeT - dt);
   sb.meter += (v.dmg - T.subDriftFrom) * T.subDriftRate * dt; // hurt opponents slip toward tapping, fresh ones toward escaping
   a.pose = { lean: 0.3, sy: 0.82 * (a.squeezeT > 0 ? 0.96 : 1), sx: a.squeezeT > 0 ? 1.08 : 1.04 };
@@ -690,12 +702,12 @@ function endSub(a, result){
   const sb = a.subbing, v = sb.v;
   a.subbing = null; v.subbedBy = null; a.pose = null; v.pose = null;
   if (result === "tap"){
-    popText("TAP! " + sb.name, v.x, v.y - 160, a.color);
+    popText("TAP! " + sb.name, v.x, v.y - 160, a.color); sfx("tap");
     hitstop = 0.35; shake = 18;
     sparks(v.x, v.y - 30, "#FFFFFF", 30, 420); sparks(v.x, v.y - 30, a.color, 24, 360);
     KO(v);
   } else {
-    popText("ESCAPED!", v.x, v.y - 150, v.color);
+    popText("ESCAPED!", v.x, v.y - 150, v.color); sfx("escape");
     v.invuln = 0.4;
     v.vx = (v.x >= a.x ? 1 : -1) * 320; v.vy = -260; v.onGround = false;
     a.vx = -(v.x >= a.x ? 1 : -1) * 120;
@@ -719,10 +731,10 @@ function spawnArrow(f, A){
   if (A.projKind === "ball"){                                        // musket: muzzle flash + smoke
     const mx = f.x + f.facing * 70, my = f.y - 58;
     projs.push({ x:mx, y:my, vx:f.facing * A.speed, owner:f, A, ak:f.stats.sig, life:1.0 });
-    sparks(mx, my, "#FFD27A", 8, 260); sparks(mx, my, "#B8BCC4", 12, 120); shake = Math.max(shake, 4);
+    sparks(mx, my, "#FFD27A", 8, 260); sparks(mx, my, "#B8BCC4", 12, 120); shake = Math.max(shake, 4); sfx("musket");
     return;
   }
-  projs.push({ x:f.x + f.facing * 30, y:f.y - 48, vx:f.facing * A.speed, owner:f, A, ak:f.stats.sig, life:1.1 });
+  projs.push({ x:f.x + f.facing * 30, y:f.y - 48, vx:f.facing * A.speed, owner:f, A, ak:f.stats.sig, life:1.1 }); sfx("arrow");
 }
 function updateProjs(dt){
   for (let i = projs.length - 1; i >= 0; i--){
@@ -735,7 +747,7 @@ function updateProjs(dt){
         const dir = Math.sign(p.vx);
         const bA = atk(b);
         if (bA && bA.blocksProj && b.atkT <= bA.startup + bA.active && Math.sign(p.vx) === -b.facing){   // shield wall eats it
-          sparks(p.x, p.y, "#E6D29A", 10, 260); popText("BLOCKED", b.x, b.y - 130, b.color);
+          sparks(p.x, p.y, "#E6D29A", 10, 260); popText("BLOCKED", b.x, b.y - 130, b.color); sfx("block");
         }
         else if (b.shielding) shieldHit(b, p.A, dir, null); else applyHit(p.owner, b, p.A, dir);
         hit = true; break;
@@ -755,6 +767,7 @@ function releaseGrabs(f){
 }
 function KO(f){
   releaseGrabs(f);
+  sfx("ko");
   if (practice){
     if (f === P2) practiceKOs++;
     f.dead = true; f.respawnT = 0.8; shake = 16;
@@ -765,7 +778,7 @@ function KO(f){
   f.stocks--; f.dead = true; f.respawnT = 1.0; shake = 16;
   const cx = Math.max(20, Math.min(W - 20, f.x)), cy = Math.max(20, Math.min(H - 20, f.y - f.h/2));
   sparks(cx, cy, f.color, 40, 700); sparks(cx, cy, "#FFFFFF", 20, 500);
-  if (f.stocks <= 0){ state = "over"; winner = f === P1 ? P2 : P1; }
+  if (f.stocks <= 0){ state = "over"; winner = f === P1 ? P2 : P1; sfx("win"); }
 }
 function respawn(f){
   Object.assign(f, { dead:false, x: W/2 + (f === P1 ? -80 : 80), y:120, vx:0, vy:0, dmg:(practice && f === P2) ? DUMMY_DMG[dummyDmgIdx] : 0, invuln:T.respawnInvuln,
@@ -871,6 +884,88 @@ function cpuInput(me, op){
   return inp;
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+//  SOUND — every effect is synthesized in code (no audio files)
+// ═══════════════════════════════════════════════════════════════
+let AC = null, master = null, noiseBuf = null;
+const VOL = { off:0, low:0.22, med:0.45, high:0.8 };
+function ensureAudio(){
+  if (typeof window === "undefined" || !(window.AudioContext || window.webkitAudioContext)) return;
+  try {
+    if (!AC){
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      master = AC.createGain(); master.connect(AC.destination);
+      const len = AC.sampleRate; noiseBuf = AC.createBuffer(1, len, AC.sampleRate);
+      const d = noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (AC.state === "suspended") AC.resume();
+    master.gain.value = VOL[settings.sound] ?? VOL.med;
+  } catch(e){}
+}
+function tone(type, f0, f1, dur, vol, delay = 0){
+  const t = AC.currentTime + delay, o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.03);
+}
+function noise(dur, vol, ftype, f0, f1, q = 1, delay = 0){
+  const t = AC.currentTime + delay, src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  src.buffer = noiseBuf; f.type = ftype; f.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  f.Q.value = q;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(master); src.start(t, Math.random() * 0.5); src.stop(t + dur + 0.03);
+}
+const SFX = {
+  swing:      () => noise(0.13, 0.22, "bandpass", 1900, 650, 1.2),
+  heavySwing: () => noise(0.24, 0.32, "bandpass", 1400, 280, 1),
+  hit: (k = 0.5) => { tone("sine", 150 + 70 * k, 42, 0.16 + 0.18 * k, 0.45 + 0.45 * k); noise(0.07 + 0.09 * k, 0.3 + 0.3 * k, "lowpass", 4200, 700, 0.7);
+                      if (k > 0.6) noise(0.28, 0.28, "lowpass", 1200, 140, 0.7, 0.01); },
+  armor:      () => tone("square", 320, 210, 0.08, 0.09),
+  shieldHit:  () => { tone("triangle", 1250, 900, 0.18, 0.22); tone("square", 2500, 2200, 0.05, 0.05); },
+  shieldBreak:() => { noise(0.5, 0.45, "highpass", 3200, 1100, 0.8); tone("sawtooth", 620, 110, 0.42, 0.14); },
+  block:      () => tone("triangle", 1500, 1400, 0.15, 0.18),
+  grab:       () => { tone("sine", 140, 70, 0.12, 0.42); noise(0.1, 0.22, "lowpass", 900, 300); },
+  throw:      () => noise(0.3, 0.28, "bandpass", 600, 1900, 1.2),
+  slam:       () => { tone("sine", 110, 32, 0.5, 0.9); noise(0.38, 0.5, "lowpass", 900, 90, 0.8); },
+  jump:       () => noise(0.1, 0.11, "bandpass", 700, 1700, 1.5),
+  dodge:      () => noise(0.14, 0.14, "highpass", 2600, 5200, 0.7),
+  ko:         () => { tone("sine", 92, 26, 1.0, 1.0); noise(0.9, 0.55, "lowpass", 2500, 60, 0.6); tone("sawtooth", 220, 55, 0.6, 0.1); },
+  subStart:   () => { tone("sawtooth", 110, 105, 0.3, 0.1); noise(0.2, 0.22, "lowpass", 600, 200); },
+  squeeze:    () => tone("square", 210 + Math.random() * 60, 150, 0.05, 0.045),
+  tap:        () => { for (let i = 0; i < 3; i++){ tone("sine", 210, 120, 0.08, 0.55, i * 0.13); noise(0.05, 0.28, "lowpass", 1500, 600, 1, i * 0.13); }
+                      tone("triangle", 196, 196, 1.3, 0.32, 0.42); tone("sine", 392, 392, 1.1, 0.13, 0.42); },        // tap-tap-tap… gong
+  escape:     () => { noise(0.25, 0.28, "bandpass", 500, 2600, 1); tone("triangle", 330, 660, 0.18, 0.1); },
+  arrow:      () => { tone("triangle", 900, 300, 0.12, 0.22); noise(0.25, 0.1, "bandpass", 3000, 1200, 2, 0.02); },
+  musket:     () => { noise(0.38, 0.85, "lowpass", 6000, 260, 0.5); tone("sine", 120, 38, 0.32, 0.75); },
+  gallop:     () => { tone("sine", 95, 52, 0.07, 0.38); noise(0.05, 0.14, "lowpass", 700, 300); },
+  cavalry:    () => { tone("sawtooth", 260, 520, 0.35, 0.08); tone("sawtooth", 390, 780, 0.35, 0.05, 0.05); },
+  ultReady:   () => { tone("triangle", 660, 660, 0.12, 0.16); tone("triangle", 990, 990, 0.22, 0.16, 0.1); },
+  ultFire:    () => { tone("sawtooth", 150, 900, 0.35, 0.15); noise(0.35, 0.18, "bandpass", 400, 4200, 1); },
+  cineHit:    () => { tone("sine", 68, 32, 0.9, 1.0); noise(0.5, 0.45, "lowpass", 1500, 80, 0.7); },
+  cineSlide:  () => noise(0.35, 0.32, "bandpass", 300, 3200, 0.8),
+  glint:      () => { tone("sine", 2600, 2600, 0.5, 0.15); tone("sine", 3900, 3900, 0.35, 0.07, 0.03); },
+  nameSlam:   () => { tone("sine", 58, 38, 0.65, 0.9); noise(0.32, 0.42, "lowpass", 3000, 200, 0.6); },
+  ui:         () => tone("triangle", 880, 880, 0.04, 0.1),
+  confirm:    () => { tone("triangle", 660, 660, 0.07, 0.15); tone("triangle", 990, 990, 0.12, 0.15, 0.07); },
+  back:       () => tone("triangle", 500, 340, 0.09, 0.12),
+  start:      () => { tone("sine", 130, 130, 1.3, 0.32); tone("triangle", 196, 196, 1.0, 0.16); noise(0.4, 0.18, "lowpass", 2000, 200); },
+  win:        () => [523, 659, 784, 1047].forEach((f, i) => tone("triangle", f, f, 0.32, 0.18, i * 0.12)),
+};
+function playSfx(name, a){
+  if (!AC || !master || settings.sound === "off" || !SFX[name]) return;
+  try { SFX[name](a); } catch(e){}
+}
+function sfx(name, a){                                           // play it, and send it to an online guest
+  if (typeof isHost === "function" && isHost()) net.ev.push(["a", name, a]);
+  playSfx(name, a);
+}
+if (typeof window !== "undefined" && window.addEventListener){
+  ["keydown", "pointerdown", "touchstart", "touchend"].forEach(ev => window.addEventListener(ev, ensureAudio, { passive:true }));
+}
+
 // ─── Particles & floating text ───
 function sparks(x, y, color, n, speed){
   if (isHost()) net.ev.push(["s", Math.round(x), Math.round(y), color, n, speed]);
@@ -948,20 +1043,31 @@ function stepSelect(){
 function stepSettings(){
   const i = merge(merge(keyInput(P1KEYS), keyInput(P2KEYS)), padInput(0));
   if (pressed.has("escape") || pressed.has("enter") || i.lightP){ saveSettings(); state = "menu"; return; }
-  if (i.upP) setRow = (setRow + 2) % 3;
-  if (i.downP) setRow = (setRow + 1) % 3;
+  if (i.upP) setRow = (setRow + 3) % 4;
+  if (i.downP) setRow = (setRow + 1) % 4;
   const d = i.leftP ? -1 : i.rightP ? 1 : 0;
   if (!d) return;
   if (setRow === 0){
     const idx = STAGE_OPTIONS.findIndex(o => o.key === settings.stage);
     settings.stage = STAGE_OPTIONS[(idx + d + STAGE_OPTIONS.length) % STAGE_OPTIONS.length].key;
   } else if (setRow === 1) settings.stocks = Math.max(1, Math.min(5, settings.stocks + d));
+  else if (setRow === 3){
+    const idx = SOUND_KEYS.indexOf(settings.sound);
+    settings.sound = SOUND_KEYS[(idx + d + SOUND_KEYS.length) % SOUND_KEYS.length];
+    ensureAudio(); playSfx("confirm");
+  }
   else {
     const idx = DIFF_KEYS.indexOf(settings.cpu);
     settings.cpu = DIFF_KEYS[(idx + d + DIFF_KEYS.length) % DIFF_KEYS.length];
   }
 }
+const NAV_KEYS = ["a","d","w","s","arrowleft","arrowright","arrowup","arrowdown"], OK_KEYS = ["f","k","enter","1","2","3","4","5","c","j","r"];
 function step(dt){
+  if (state === "menu" || state === "select" || state === "settings" || state === "online" || state === "over"){
+    if (pressed.has("escape") || pressed.has("m")) playSfx("back");
+    else if (OK_KEYS.some(k => pressed.has(k))) playSfx("confirm");
+    else if (NAV_KEYS.some(k => pressed.has(k))) playSfx("ui");
+  }
   if (net) netTick(dt);
   if (online && net && net.role === "guest" && (state === "playing" || state === "over")){ guestStep(dt); return; }
   if (state === "online"){ animT += dt; stepOnline(); return; }
@@ -1023,10 +1129,15 @@ function stepCore(dt){
   if (paused) return;
   playTime += dt;
   shake *= 0.86;
-  if (cine){ cine.t += dt; updateFx(dt); if (cine.t >= cine.dur) resolveCine(); return; }
+  if (cine){
+    const t0 = cine.t; cine.t += dt;
+    const crossed = x => t0 < x && cine.t >= x;
+    if (crossed(0.06)) sfx("cineSlide"); if (crossed(0.38)) sfx("glint"); if (crossed(0.56)) sfx("nameSlam");
+    updateFx(dt); if (cine.t >= cine.dur) resolveCine(); return;
+  }
   if (hitstop > 0){ hitstop -= dt; return; }
   updatePlats(dt);
-  const i1 = merge(keyInput(P1.keys), padInput(0));
+  const i1 = merge(merge(keyInput(P1.keys), padInput(0)), touchInput());
   const i2 = online ? takeRemoteInput() : practice ? dummyInput(P2, P1) : P2.cpu ? cpuInput(P2, P1) : merge(keyInput(P2.keys), padInput(1));
   updateFighter(P1, i1, dt);
   updateFighter(P2, i2, dt);
@@ -1510,7 +1621,8 @@ function drawHUD(){
     const pulse = full ? 0.6 + 0.4 * Math.sin(animT * 8) : 1;
     ctx.globalAlpha = pulse; ctx.fillStyle = full ? "#FFD36A" : f.color; roundRect(x + 12, y + 70, (cw - 24) * uk, 5, 3); ctx.fill(); ctx.globalAlpha = 1;
     if (full && !f.dead){
-      const keyName = f.cpu ? "" : (f === P1 ? " — PRESS E" : " — PRESS U");
+      const mineF = !online || (net && (net.role === "host" ? f === P1 : f === P2));
+      const keyName = f.cpu || (online && !mineF) ? "" : IS_TOUCH ? " — TAP ULT" : (f === P1 || online ? " — PRESS E" : " — PRESS U");
       ctx.globalAlpha = pulse; ctx.fillStyle = "#FFD36A"; ctx.font = "900 12px system-ui"; ctx.textAlign = "center";
       ctx.fillText("★ ULTIMATE READY" + keyName, x + cw / 2, y - 8); ctx.globalAlpha = 1; ctx.textAlign = "left";
     }
@@ -1521,7 +1633,7 @@ function drawHUD(){
     ctx.fillStyle = ready ? "#14181F" : "rgba(201,161,90,0.5)"; ctx.font = "bold 13px system-ui"; ctx.textAlign = "center";
     ctx.fillText("★", x + cw - 22, y + 27);
   });
-  if (playTime < 7 && !practice){
+  if (playTime < 7 && !practice && !IS_TOUCH){
     ctx.globalAlpha = Math.min(1, 7 - playTime);
     ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.textAlign = "center";
     ctx.fillText("P1: WASD move/jump · F light · G heavy · T signature · R grab (then a direction to throw) · hold H shield / H+dir roll", W/2, 30);
@@ -1541,8 +1653,18 @@ function centerText(t, y, size, color, weight = "bold"){
 }
 function drawMenu(){
   drawBackground();
+  if (IS_TOUCH){
+    centerText("ROLLWARRIORS", 130, 60, "#C9A15A");
+    centerText("BRAWL", 168, 18, "#8B95A3");
+    const items = [["VS CPU","1",true],["ONLINE","5",true],["PRACTICE","4",false],["SETTINGS","3",false]];
+    items.forEach(([lb, key, gold], i) => uiBtn(W/2 - 170, 210 + i * 86, 340, 66, lb, () => pressed.add(key), { gold, size:24 }));
+    centerText("Left thumb: joystick (anywhere on the left)  ·  Right thumb: buttons", 590, 15, "#8B95A3", "normal");
+    centerText("ATTACK beats GRAB · GRAB beats SHIELD · SHIELD beats ATTACK", 622, 16, "#C9A15A");
+    centerText("Takedown (GRAB, stick down), then GRAB the pinned opponent to SUBMIT", 650, 14, "#B7BFC9", "normal");
+    return;
+  }
   centerText("ROLLWARRIORS", 190, 64, "#C9A15A");
-  centerText("BRAWL · GAMEPLAY PROTOTYPE v15", 228, 18, "#8B95A3");
+  centerText("BRAWL · GAMEPLAY PROTOTYPE v16", 228, 18, "#8B95A3");
   centerText("Press 1 — vs CPU", 310, 26, "#EDEFF2");
   centerText("Press 2 — 2 Players (same keyboard)", 352, 26, "#EDEFF2");
   centerText("3 — Settings     ·     4 — Practice     ·     5 — ONLINE", 394, 20, "#C9A15A");
@@ -1555,7 +1677,7 @@ function drawMenu(){
   centerText("ATTACK beats GRAB · GRAB beats SHIELD · SHIELD beats ATTACK", 568, 18, "#C9A15A");
   centerText("Grab, then a direction to throw: → Double Leg · ← Hip Throw · ↑ Suplex · ↓ Takedown", 594, 15, "#B7BFC9", "normal");
   centerText("After a TAKEDOWN, GRAB the pinned opponent to SUBMIT them — mash to finish, mash to escape!", 618, 15, "#C9A15A", "normal");
-  if ("ontouchstart" in window) centerText("Keyboard or controller needed — touch controls come later.", 672, 15, "#E86A6A", "normal");
+
 }
 function wrap(text, x, y, maxW, lineH){
   const words = text.split(" "); let line = "";
@@ -1575,6 +1697,7 @@ function drawSelect(){
   WARRIORS.forEach((Wr, i) => {
     const x = gx + (i % COLS) * (tw + gap), y = gy + Math.floor(i / COLS) * (th + gap);
     const sel1 = pick.p1 === i, sel2 = pick.p2 === i && (!vsCpu || pick.p2ok);
+    if (IS_TOUCH) uiArea(x, y, tw, th, () => selectTap(i));
     ctx.fillStyle = sel1 || sel2 ? "rgba(40,48,62,0.98)" : "rgba(29,35,45,0.92)"; roundRect(x, y, tw, th, 12); ctx.fill();
     ctx.fillStyle = Wr.color; ctx.fillRect(x, y + th - 5, tw, 5);
     ctx.save(); roundRect(x, y, tw, th - 5, 12); ctx.clip();
@@ -1618,6 +1741,12 @@ function drawSelect(){
   if (online) panel(pick.p2, 40 + half, half, you === 2 ? "P2 · YOU" : "P2 · OPPONENT", "#4A9FD0", pick.p2ok);
   else if (!vsCpu || pick.p2ok) panel(pick.p2, 40 + half, half, vsCpu ? (practice ? "DUMMY" : "CPU") : "P2", "#4A9FD0", pick.p2ok);
   else { ctx.fillStyle = "rgba(20,24,31,0.6)"; roundRect(40 + half, py, half, ph, 16); ctx.fill(); ctx.fillStyle = "#5D6673"; ctx.font = "bold 14px system-ui"; ctx.textAlign = "center"; ctx.fillText(practice ? "Dummy picked after you" : "CPU picks at random", 40 + half + half / 2, py + ph / 2); }
+  if (IS_TOUCH){
+    const mine = online && net ? (net.role === "host" ? "p1" : "p2") : "p1";
+    uiBtn(14, 12, 110, 40, online ? "✕ LEAVE" : "← BACK", () => pressed.add("escape"), { size:15 });
+    if (!pick[mine + "ok"]) uiBtn(W - 214, 12, 200, 48, "FIGHT ✓", () => pressed.add("f"), { gold:true, size:20 });
+    else centerText("Waiting for your opponent…", H - 14, 15, "#FFD36A");
+  } else
   if (online) centerText("A / D / W / S to choose · F to confirm · Esc leave", H - 14, 14, "#8B95A3", "normal"); else
   centerText(vsCpu ? "P1: A / D / W / S to choose · F to confirm · Esc back" : "P1: A/D/W/S choose · F confirm      P2: arrows choose · K confirm      Esc back", H - 14, 14, "#8B95A3", "normal");
 }
@@ -1629,9 +1758,11 @@ function drawSettings(){
     ["DEFAULT STAGE", opt.name, opt.desc],
     ["STOCKS (LIVES)", String(settings.stocks), settings.stocks === 1 ? "One life — sudden death" : settings.stocks + " lives each"],
     ["CPU DIFFICULTY", DIFFS[settings.cpu].name, settings.cpu === "easy" ? "Slow reactions, rarely blocks" : settings.cpu === "hard" ? "Fast reactions, blocks and dodges a lot" : "A fair fight"],
+    ["SOUND", SOUND_NAMES[settings.sound] || "MEDIUM", settings.sound === "off" ? "Silent" : "Effects volume"],
   ];
   rows.forEach(([label, val, sub], i) => {
-    const y = 180 + i * 110, x = 120, w = 620, sel = setRow === i;
+    const y = 160 + i * 100, x = 120, w = 620, sel = setRow === i;
+    if (IS_TOUCH){ uiArea(x, y, w / 2, 90, () => { setRow = i; pressed.add("a"); }); uiArea(x + w / 2, y, w / 2, 90, () => { setRow = i; pressed.add("d"); }); }
     ctx.fillStyle = sel ? "rgba(201,161,90,0.14)" : "rgba(29,35,45,0.9)"; roundRect(x, y, w, 90, 14); ctx.fill();
     if (sel){ ctx.strokeStyle = "#C9A15A"; ctx.lineWidth = 3; roundRect(x, y, w, 90, 14); ctx.stroke(); }
     ctx.textAlign = "left"; ctx.fillStyle = "#8B95A3"; ctx.font = "bold 13px system-ui"; ctx.fillText(label, x + 24, y + 30);
@@ -1654,8 +1785,9 @@ function drawSettings(){
     ctx.fillStyle = "#C9A15A"; ctx.fillRect(lx + st.main.x * sc, ly + (st.main.y - 150) * sc, st.main.w * sc, 5);
     ctx.fillStyle = "#8B95A3"; for (const p of st.plats) ctx.fillRect(lx + p.x * sc, ly + (p.y - 150) * sc, p.w * sc, 3);
   } else { ctx.fillStyle = "#8B95A3"; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("Stage decided when the match starts", px + pw/2, ly + 40); }
-  centerText("W / S choose setting   ·   A / D change   ·   F or Esc to save", 560, 15, "#8B95A3", "normal");
-  centerText("Settings are saved on this device.", 586, 13, "#5D6673", "normal");
+  if (IS_TOUCH){ centerText("Tap the left or right side of a setting to change it", 600, 15, "#8B95A3", "normal"); uiBtn(W/2 - 110, 626, 220, 54, "SAVE & BACK", () => pressed.add("escape"), { gold:true }); }
+  else { centerText("W / S choose setting   ·   A / D change   ·   F or Esc to save", 600, 15, "#8B95A3", "normal");
+         centerText("Settings are saved on this device.", 626, 13, "#5D6673", "normal"); }
 }
 function drawBoxes(){
   for (const f of [P1, P2]){
@@ -1672,7 +1804,7 @@ function drawBoxes(){
   for (const p of projs){ ctx.strokeStyle = "#FF5050"; ctx.strokeRect(p.x - 14, p.y - 4, 28, 8); }
 }
 function drawPractice(){
-  const x = 16, y = 16, w = 330;
+  const x = 16, y = IS_TOUCH ? 64 : 16, w = 330;
   ctx.fillStyle = "rgba(11,14,19,0.86)"; roundRect(x, y, w, 196, 14); ctx.fill();
   ctx.textAlign = "left";
   ctx.fillStyle = "#C9A15A"; ctx.font = "900 16px system-ui"; ctx.fillText("PRACTICE MODE", x + 14, y + 26);
@@ -1817,6 +1949,11 @@ function drawBanner(){
   ctx.globalAlpha = 1;
 }
 function draw(){
+  ui = [];
+  drawInner();
+  if (IS_TOUCH){ drawTouchOverlays(); drawRotateHint(); }
+}
+function drawInner(){
   ctx.save();
   if (state === "settings"){ drawSettings(); ctx.restore(); return; }
   if (state === "online"){ drawOnline(); ctx.restore(); return; }
@@ -1845,17 +1982,156 @@ function draw(){
   if (impactFlash > 0){ ctx.fillStyle = `rgba(255,255,255,${impactFlash})`; ctx.fillRect(0, 0, W, H); }
   if (paused){
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
-    centerText("PAUSED", H/2, 48, "#EDEFF2"); centerText("Press P to resume", H/2 + 40, 16, "#8B95A3", "normal");
+    centerText("PAUSED", H/2, 48, "#EDEFF2"); if (!IS_TOUCH) centerText("Press P to resume", H/2 + 40, 16, "#8B95A3", "normal");
   }
   if (state === "over"){
     ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(0, 0, W, H);
     centerText(winner.tag + " " + winner.name + " WINS", H/2 - 20, 60, winner.color);
     const overHelp = !online ? "R — rematch    ·    C — change warriors    ·    M — menu"
       : net && net.role === "host" ? "R — rematch    ·    C — change warriors    ·    M — leave" : "R — ask for a rematch    ·    M — leave";
-    centerText(overHelp, H/2 + 30, 18, "#B7BFC9", "normal");
+    if (!IS_TOUCH) centerText(overHelp, H/2 + 30, 18, "#B7BFC9", "normal");
   }
 }
 
+
+
+// ═══════════════════════════════════════════════════════════════
+//  PHONE CONTROLS — floating joystick + fight buttons, tappable menus
+// ═══════════════════════════════════════════════════════════════
+const IS_TOUCH = typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+let ui = [];                                                   // tappable areas registered while drawing each frame
+function uiArea(x, y, w, h, onTap){ ui.push({ x, y, w, h, onTap }); }
+function uiBtn(x, y, w, h, label, onTap, o = {}){
+  ctx.fillStyle = o.gold ? "#C9A15A" : "rgba(29,35,45,0.94)"; roundRect(x, y, w, h, Math.min(16, h / 2)); ctx.fill();
+  ctx.strokeStyle = o.gold ? "#FFE9B0" : "rgba(201,161,90,0.7)"; ctx.lineWidth = 2; roundRect(x, y, w, h, Math.min(16, h / 2)); ctx.stroke();
+  ctx.fillStyle = o.gold ? "#14181F" : "#EDEFF2"; ctx.font = `900 ${o.size || 18}px system-ui`; ctx.textAlign = "center";
+  ctx.fillText(label, x + w / 2, y + h / 2 + (o.size || 18) * 0.36);
+  uiArea(x, y, w, h, onTap);
+}
+const TB = {
+  jump:   { x:1190, y:640, r:52, label:"JUMP" },
+  light:  { x:1078, y:662, r:44, label:"LIGHT" },
+  heavy:  { x:1098, y:552, r:44, label:"HEAVY" },
+  grab:   { x:972,  y:652, r:38, label:"GRAB" },
+  shield: { x:1214, y:528, r:40, label:"SHIELD" },
+  sig:    { x:986,  y:552, r:36, label:"★" },
+  ult:    { x:1196, y:420, r:40, label:"ULT" },
+};
+const touch = { stick:null, sx:170, sy:560, dx:0, dy:0, btn:new Map(), held:new Set(), edges:new Set(), prev:{} };
+function toCanvas(t){ const r = cv.getBoundingClientRect(); return { x:(t.clientX - r.left) * W / r.width, y:(t.clientY - r.top) * H / r.height }; }
+const fighting = () => state === "playing" && !paused;
+let triedFullscreen = false;
+function onTouchStart(e){
+  e.preventDefault(); ensureAudio();
+  if (!triedFullscreen){ triedFullscreen = true; try { const d = document.documentElement; if (d.requestFullscreen) d.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock("landscape").catch(() => {})).catch(() => {}); } catch(_){} }
+  for (const t of e.changedTouches){
+    const p = toCanvas(t);
+    const hit = [...ui].reverse().find(u => p.x >= u.x && p.x <= u.x + u.w && p.y >= u.y && p.y <= u.y + u.h);
+    if (hit){ playSfx("ui"); hit.onTap(); continue; }
+    if (!fighting()) continue;
+    const b = Object.entries(TB).find(([, v]) => Math.hypot(p.x - v.x, p.y - v.y) <= v.r * 1.18);
+    if (b){ touch.btn.set(t.identifier, b[0]); touch.held.add(b[0]); touch.edges.add(b[0]); continue; }
+    if (p.x < W * 0.5 && touch.stick === null){ touch.stick = t.identifier; touch.sx = p.x; touch.sy = p.y; touch.dx = 0; touch.dy = 0; }
+  }
+}
+function onTouchMove(e){
+  e.preventDefault();
+  for (const t of e.changedTouches){
+    if (t.identifier !== touch.stick) continue;
+    const p = toCanvas(t); let dx = p.x - touch.sx, dy = p.y - touch.sy; const m = Math.hypot(dx, dy), R = 80;
+    if (m > R){ touch.sx += dx * (1 - R / m); touch.sy += dy * (1 - R / m); dx = p.x - touch.sx; dy = p.y - touch.sy; }   // stick follows your thumb
+    touch.dx = dx; touch.dy = dy;
+  }
+}
+function onTouchEnd(e){
+  e.preventDefault();
+  for (const t of e.changedTouches){
+    if (t.identifier === touch.stick){ touch.stick = null; touch.dx = 0; touch.dy = 0; }
+    const b = touch.btn.get(t.identifier); if (b){ touch.btn.delete(t.identifier); if (![...touch.btn.values()].includes(b)) touch.held.delete(b); }
+  }
+}
+if (IS_TOUCH){
+  cv.addEventListener("touchstart", onTouchStart, { passive:false });
+  cv.addEventListener("touchmove", onTouchMove, { passive:false });
+  cv.addEventListener("touchend", onTouchEnd, { passive:false });
+  cv.addEventListener("touchcancel", onTouchEnd, { passive:false });
+  document.addEventListener("gesturestart", e => e.preventDefault());
+}
+function touchInput(){
+  if (!IS_TOUCH) return null;
+  const r = blankInput();
+  if (touch.stick !== null){
+    const nx = touch.dx / 70, ny = touch.dy / 70;
+    r.left = nx < -0.4; r.right = nx > 0.4; r.up = ny < -0.6; r.down = ny > 0.6;
+  }
+  const P = touch.prev;
+  r.leftP = r.left && !P.left; r.rightP = r.right && !P.right; r.upP = r.up && !P.up; r.downP = r.down && !P.down;
+  touch.prev = { left:r.left, right:r.right, up:r.up, down:r.down };
+  const E = touch.edges;
+  r.jumpP = E.has("jump"); r.lightP = E.has("light"); r.heavyP = E.has("heavy"); r.grabP = E.has("grab");
+  r.sigP = E.has("sig"); r.ultP = E.has("ult"); r.dodgeP = E.has("shield"); r.dodge = touch.held.has("shield");
+  E.clear();
+  return r;
+}
+function selectTap(i){
+  const mine = online && net ? (net.role === "host" ? "p1" : "p2") : "p1";
+  if (pick[mine + "ok"]) return;
+  if (pick[mine] === i){ pressed.add("f"); return; }             // tap again to confirm
+  pick[mine] = i;
+  if (online) netSend({ k:"sel", p:i, ok:false });
+}
+function drawTouchFight(){
+  const me = online && net && net.role === "guest" ? P2 : P1;
+  // joystick
+  const active = touch.stick !== null;
+  ctx.globalAlpha = active ? 0.9 : 0.35;
+  ctx.fillStyle = "rgba(20,24,31,0.55)"; ctx.strokeStyle = "rgba(255,255,255,0.35)"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(touch.sx, touch.sy, 80, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.75)"; ctx.beginPath(); ctx.arc(touch.sx + touch.dx, touch.sy + touch.dy, 34, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+  // buttons
+  for (const [k, b] of Object.entries(TB)){
+    const held = touch.held.has(k);
+    let fill = held ? "rgba(201,161,90,0.75)" : "rgba(20,24,31,0.6)", edge = "rgba(255,255,255,0.4)", txt = "#EDEFF2";
+    if (k === "sig" && me && me.sigCD > 0){ fill = "rgba(20,24,31,0.35)"; txt = "rgba(237,239,242,0.35)"; }
+    if (k === "ult"){
+      const ready = me && me.ult >= T.ultMax;
+      if (!ready){ fill = "rgba(20,24,31,0.3)"; txt = "rgba(237,239,242,0.3)"; edge = "rgba(255,255,255,0.15)"; }
+      else { const pu = 0.6 + 0.4 * Math.sin(animT * 8); fill = `rgba(255,211,106,${0.55 + 0.35 * pu})`; txt = "#14181F"; edge = "#FFE9B0"; }
+      if (me && !ready){ ctx.strokeStyle = "rgba(255,211,106,0.8)"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (me.ult / T.ultMax)); ctx.stroke(); }
+    }
+    ctx.fillStyle = fill; ctx.strokeStyle = edge; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = txt; ctx.textAlign = "center"; ctx.font = `900 ${b.label.length > 4 ? 13 : 16}px system-ui`;
+    ctx.fillText(b.label, b.x, b.y + 5);
+  }
+  // pause / leave
+  uiBtn(14, 12, 104, 40, online ? "✕ LEAVE" : "❚❚ MENU", () => pressed.add(online || practice ? "escape" : "p"), { size:15 });
+  if (practice){
+    const labels = [["DUMMY","1"],["DAMAGE","2"],["RESET","3"],["BOXES","4"],["SWAP","5"],["MOVES","6"],["FILL ULT","7"]];
+    labels.forEach(([lb, key], i) => uiBtn(370 + i * 106, 14, 98, 36, lb, () => pressed.add(key), { size:13 }));
+  }
+}
+function drawTouchOverlays(){
+  if (state === "playing" && !paused) drawTouchFight();
+  if (state === "playing" && paused){
+    uiBtn(W/2 - 230, H/2 + 70, 210, 56, "RESUME", () => pressed.add("p"), { gold:true });
+    uiBtn(W/2 + 20, H/2 + 70, 210, 56, "QUIT TO MENU", () => { paused = false; state = "menu"; });
+  }
+  if (state === "over"){
+    const btns = !online ? [["REMATCH","r"],["CHANGE WARRIORS","c"],["MENU","m"]]
+      : net && net.role === "host" ? [["REMATCH","r"],["CHANGE WARRIORS","c"],["LEAVE","m"]] : [["ASK REMATCH","r"],["LEAVE","m"]];
+    const bw = 230, gap = 16, x0 = W/2 - (btns.length * bw + (btns.length - 1) * gap) / 2;
+    btns.forEach(([lb, key], i) => uiBtn(x0 + i * (bw + gap), H/2 + 70, bw, 56, lb, () => pressed.add(key), { gold: i === 0 }));
+  }
+}
+function drawRotateHint(){
+  if (!IS_TOUCH || innerHeight <= innerWidth) return;
+  ctx.fillStyle = "#0B0E13"; ctx.fillRect(0, 0, W, H);
+  centerText("↻", H/2 - 20, 300, "#C9A15A");
+  centerText("Turn your phone", H/2 + 150, 96, "#EDEFF2");
+  centerText("sideways to play", H/2 + 260, 96, "#EDEFF2");
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  ONLINE 1v1
@@ -2047,7 +2323,11 @@ function handleGame(m){
       if (net.role === "guest" && (state === "playing" || state === "over")){
         const fresh = !net.snapN || m.n > net.snapN;
         applySnapshot(m);
-        if (fresh && m.ev) for (const e of m.ev){ if (e[0] === "p") floats.push({ text:e[1], x:e[2], y:e[3], color:e[4], life:0.9 }); else sparksLocal(e[1], e[2], e[3], e[4], e[5]); }
+        if (fresh && m.ev) for (const e of m.ev){
+          if (e[0] === "p") floats.push({ text:e[1], x:e[2], y:e[3], color:e[4], life:0.9 });
+          else if (e[0] === "a") playSfx(e[1], e[2]);
+          else sparksLocal(e[1], e[2], e[3], e[4], e[5]);
+        }
       }
       break;
     case "ev":
@@ -2094,7 +2374,7 @@ function guestStep(dt){
     if (pressed.has("m")) leaveOnline();
     return;
   }
-  const inp = merge(keyInput(P1KEYS), padInput(0));
+  const inp = merge(merge(keyInput(P1KEYS), padInput(0)), touchInput());
   for (const e of EDGE_KEYS) if (inp[e]) net.outE.add(e);
   net.frame++;
   if (!net.relay || net.frame % 2 === 0){
@@ -2109,7 +2389,7 @@ function hostSend(){
   const snap = hostSnapshot(); snap.ev = net.ev; net.ev = [];   // visual effects ride along with the snapshot
   netSend(snap, true);
 }
-const isHost = () => online && net && net.role === "host";
+function isHost(){ return online && net && net.role === "host"; }
 
 // ── online lobby screen ──
 function stepOnline(){
@@ -2143,10 +2423,24 @@ function drawOnline(){
     centerText("ENTER ROOM CODE", 270, 18, "#8B95A3");
     const t = om.mode === "typing" ? om.typed : (net ? net.code : om.typed);
     centerText((t + "____").slice(0, 4).split("").join(" "), 350, 84, "#FFFFFF", "900");
-    if (om.mode === "typing") centerText("Type the 4 letters, then Enter", 410, 17, "#B7BFC9", "normal");
+    if (om.mode === "typing") centerText(IS_TOUCH ? "Tap the 4-letter code" : "Type the 4 letters, then Enter", 410, 17, "#B7BFC9", "normal");
   }
   if (om.msg) centerText(om.msg, 470, 17, "#FFD36A");
-  centerText("Esc — back", 660, 14, "#5D6673", "normal");
+  if (!IS_TOUCH){ centerText("Esc — back", 660, 14, "#5D6673", "normal"); return; }
+  uiBtn(14, 12, 110, 40, "← BACK", () => pressed.add("escape"), { size:15 });
+  if (om.mode === "menu"){
+    ctx.fillStyle = "#0B0E13"; ctx.fillRect(0, 270, W, 110);
+    uiBtn(W/2 - 340, 280, 320, 72, "CREATE ROOM", () => pressed.add("c"), { gold:true, size:24 });
+    uiBtn(W/2 + 20, 280, 320, 72, "JOIN ROOM", () => pressed.add("j"), { size:24 });
+  }
+  if (om.mode === "typing"){
+    const keys = CODE_CHARS.split(""), cols = 11, kw = 72, kh = 50, kg = 8, x0 = W/2 - (cols * kw + (cols - 1) * kg) / 2, y0 = 425;
+    ctx.fillStyle = "#0B0E13"; ctx.fillRect(0, 395, W, 30);
+    keys.forEach((ch, i) => uiBtn(x0 + (i % cols) * (kw + kg), y0 + Math.floor(i / cols) * (kh + kg), kw, kh, ch, () => pressed.add(ch.toLowerCase()), { size:22 }));
+    const r = Math.ceil(keys.length / cols), last = keys.length % cols;
+    uiBtn(x0 + last * (kw + kg), y0 + (r - 1) * (kh + kg), kw * 2 + kg, kh, "⌫ DEL", () => pressed.add("backspace"), { size:16 });
+    uiBtn(W/2 - 150, y0 + r * (kh + kg) + 6, 300, 54, "JOIN →", () => pressed.add("enter"), { gold:true, size:22 });
+  }
 }
 function drawNetBadge(){
   if (!online || !net) return;
