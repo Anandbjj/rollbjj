@@ -114,7 +114,7 @@ const ATTACKS = {
   sig_scramble:{ startup:0.05, active:0.20, recovery:0.24, dmg:8,  base:260, scale:5.0, angle:55, w:62, h:66, ox:16, oy:-40, dash:860, invulnActive:true, len:40, anim:"slash", cd:1.1 },
   sig_iaido:   { startup:0.28, active:0.07, recovery:0.48, dmg:12, base:330, scale:8.6, angle:30, w:170, h:44, ox:95, oy:-48, len:95, anim:"slash", cd:1.3, shake:12 },
   sig_shieldwall:{ startup:0.14, active:0.32, recovery:0.30, dmg:9, base:360, scale:6.5, angle:22, w:78, h:84, ox:30, oy:-46, dash:600, armor:true, blocksProj:true, len:40, anim:"thrust", cd:1.3 },
-  sig_cavalry: { startup:0.32, active:0.48, recovery:0.32, dmg:13, base:420, scale:7.2, angle:35, w:150, h:110, ox:30, oy:-55, dash:880, armor:true, mount:true, len:40, anim:"thrust", cd:2.2 },
+  sig_cavalry: { startup:0.24, active:0.38, recovery:0.24, dmg:13, base:420, scale:7.2, angle:35, w:150, h:110, ox:30, oy:-55, dash:950, armor:true, mount:true, len:40, anim:"thrust", cd:2.2 },
   sig_eagledive:{ startup:0.18, active:0.34, recovery:0.30, dmg:12, base:380, scale:7.5, angle:50, w:84, h:88, ox:24, oy:-36, hop:-640, dive:{ vx:640, vy:980 }, len:50, anim:"overhead", cd:1.4 },
   sig_cobra:   { startup:0.20, active:0.12, recovery:0.36, dmg:8,  base:280, scale:1.2, angle:12, w:160, h:46, ox:92, oy:-50, pull:true, len:84, anim:"slash", cd:1.2 },
   sig_volley:  { startup:0.30, active:0.02, recovery:0.42, projectile:true, projKind:"ball", dmg:10, base:260, scale:4.5, angle:18, speed:1400, len:40, anim:"thrust", cd:1.6 },
@@ -321,9 +321,9 @@ const STAGE_OPTIONS = [
   { key:"random", name:"RANDOM",    desc:"Any stage, picked at random" },
   ...STAGES.map(st => ({ key:st.key, name:st.name, desc:st.owner + "'S HOME" })),
 ];
-const DIFFS = { easy:{ name:"EASY", react:1.9, def:0.4 }, normal:{ name:"NORMAL", react:1.0, def:1.0 }, hard:{ name:"HARD", react:0.5, def:1.9 } };
+const DIFFS = { easy:{ name:"EASY", react:2.7, def:0.2 }, normal:{ name:"NORMAL", react:1.0, def:1.0 }, hard:{ name:"HARD", react:0.5, def:1.9 } };
 const DIFF_KEYS = ["easy", "normal", "hard"];
-let settings = { stage:"home", stocks:3, cpu:"normal", sound:"med" };
+let settings = { stage:"home", stocks:3, cpu:"easy", sound:"med" };      // new players start on Easy
 const SOUND_KEYS = ["off", "low", "med", "high"], SOUND_NAMES = { off:"OFF", low:"LOW", med:"MEDIUM", high:"HIGH" };
 try { const sv = JSON.parse(localStorage.getItem("rw_brawl_settings") || "null"); if (sv) settings = { ...settings, ...sv }; } catch(e) {}
 function saveSettings(){ try { localStorage.setItem("rw_brawl_settings", JSON.stringify(settings)); } catch(e) {} }
@@ -363,7 +363,7 @@ function startGame(){
   loadStage(STAGE);
   resetAmbient(); bgShift = 0;
   homeTag = STAGE.owner === P1.name ? P1 : STAGE.owner === P2.name ? P2 : null;
-  parts.length = 0; projs.length = 0; floats.length = 0; cine = null; grd = null;
+  parts.length = 0; projs.length = 0; floats.length = 0; cine = null; grd = null; groundsThisMatch = 0;
   winner = null; paused = false; hitstop = 0; shake = 0; playTime = 0;
   state = "playing";
   sfx("start");
@@ -519,6 +519,12 @@ function updateFighter(f, inp, dt){
   f.vy = Math.min(f.vy + g * dt, maxFall);
 
   moveAndCollide(f, dt);
+  const MA = atk(f);
+  if (MA && MA.mount && f.atkT <= MA.startup + MA.active + 0.06){     // the horse never runs off the stage
+    const lo = MAIN.x + 24, hi = MAIN.x + MAIN.w - 24;
+    if (f.x < lo){ f.x = lo; if (f.vx < 0) f.vx = 0; }
+    if (f.x > hi){ f.x = hi; if (f.vx > 0) f.vx = 0; }
+  }
 
   if (f.x < BLAST.l || f.x > BLAST.r || f.y > BLAST.b || f.y - f.h < BLAST.t) KO(f);
 }
@@ -696,6 +702,9 @@ function updateThrow(f, dt){
 const POS = ["GUARD", "HALF GUARD", "SIDE CONTROL", "MOUNT", "BACK"];
 const TOPN = { light:"ADVANCE", heavy:"POUND", grab:"SUBMIT" };
 const BOTN = { light:"SWEEP", heavy:"ESCAPE", grab:"DEFEND" };
+const TOPB = { light:"ESCAPE", heavy:"DEFEND", grab:"SWEEP" };          // what each top move beats
+const BOTB = { light:"ADVANCE", heavy:"POUND", grab:"SUBMIT" };         // what each bottom move beats
+let groundsThisMatch = 0;
 const GOUT = { light:{ light:"bot", heavy:"top", grab:"tie" }, heavy:{ light:"tie", heavy:"bot", grab:"top" }, grab:{ light:"top", heavy:"tie", grab:"bot" } };
 const BOT_OK = [1.0, 0.85, 0.7, 0.55, 0.45];          // a "won" sweep/escape/defend succeeds this often, by position
 const POS_SUB = [0, 6, 12, 18, 26];                    // submission meter head start, by position
@@ -706,7 +715,8 @@ function startGround(top, bot, pos){
   top.attack = null; bot.attack = null; top.vx = top.vy = bot.vx = bot.vy = 0;
   bot.knockdown = 0; bot.hitstun = 0; bot.sprawled = false; top.shielding = bot.shielding = false;
   top.inGround = bot.inGround = true; top.onGround = bot.onGround = true; top.y = bot.y;
-  grd = { top, bot, pos, phase:"pick", t:0, pTop:null, pBot:null, ex:0, res:"", show:null, end:null, seq:++grdSeq,
+  const first = ++groundsThisMatch === 1;
+  grd = { top, bot, pos, phase:"pick", t:0, pTop:null, pBot:null, ex:0, res:"", show:null, end:null, seq:++grdSeq, win: first ? 4.0 : T.gPick,
           dir: Math.sign(bot.x - top.x) || top.facing };
   sfx("grab"); hitstop = 0.06;                                   // the ground panel announces the position
 }
@@ -727,10 +737,10 @@ function updateGround(dt, i1, i2){
       const pk = inp.lightP ? "light" : inp.heavyP ? "heavy" : inp.grabP ? "grab" : null;
       if (pk){ g[key] = pk; playSfx("ui"); }
     }
-    if ((g.pTop && g.pBot) || g.t >= T.gPick){ g.pTop = g.pTop || "light"; g.pBot = g.pBot || "grab"; resolveGround(); }
+    if ((g.pTop && g.pBot) || g.t >= (g.win || T.gPick)){ g.pTop = g.pTop || "light"; g.pBot = g.pBot || "grab"; resolveGround(); }
   } else if (g.t >= T.gShow){
     if (g.end) finishGround(g.end);
-    else { g.phase = "pick"; g.t = 0; g.pTop = g.pBot = null; g.show = null; g.res = ""; g.seq = ++grdSeq; }
+    else { g.phase = "pick"; g.t = 0; g.pTop = g.pBot = null; g.show = null; g.res = ""; g.seq = ++grdSeq; g.win = g.ex === 1 && groundsThisMatch === 1 ? 3.0 : T.gPick; }
   }
 }
 function gDamage(f, d){
@@ -789,6 +799,7 @@ function cpuGroundPick(me){
     if (top) return { light:"grab", heavy:"light", grab:"heavy" }[fav];         // counter their bottom habit
     return fav;                                                                  // bottom: SWEEP beats ADVANCE, ESCAPE beats POUND, DEFEND beats SUBMIT
   }
+  if (settings.cpu === "easy") return ["light", "heavy", "grab"][Math.floor(Math.random() * 3)];   // Easy: no strategy on the ground
   const w = top ? { light:0.45, heavy:0.3, grab:0.25 } : { light: pos <= 1 ? 0.45 : 0.25, heavy:0.35, grab:0.3 };
   if (top && opp.dmg > 70) w.grab += 0.2;
   if (top && pos >= 3) w.grab += 0.15;
@@ -806,7 +817,7 @@ function cpuGroundInput(me){
 }
 function drawGroundPanel(){
   const g = grd, top = g.top, bot = g.bot, sc = IS_TOUCH ? 1.35 : 1;
-  const cx = Math.max(230 * sc, Math.min(W - 230 * sc, (top.x + bot.x) / 2)), py = Math.max(IS_TOUCH ? 64 : 70, bot.y - 250 - (sc - 1) * 128), pw = 440, ph = 128, x = cx - pw / 2;
+  const cx = Math.max(240 * sc, Math.min(W - 240 * sc, (top.x + bot.x) / 2)), pw = 470, ph = 150, py = Math.max(IS_TOUCH ? 62 : 66, bot.y - 270 - (sc - 1) * ph), x = cx - pw / 2;
   ctx.save(); ctx.translate(cx, py); ctx.scale(sc, sc); ctx.translate(-cx, -py);
   drawGroundPanelInner(g, top, bot, cx, py, pw, ph, x);
   ctx.restore();
@@ -823,22 +834,37 @@ function drawGroundPanelInner(g, top, bot, cx, py, pw, ph, x){
   });
   ctx.textAlign = "center";
   if (g.phase === "pick"){
-    const k = Math.max(0, 1 - g.t / T.gPick);
+    const k = Math.max(0, 1 - g.t / (g.win || T.gPick));
     ctx.fillStyle = "rgba(255,255,255,0.1)"; ctx.fillRect(x + 20, py + 40, pw - 40, 5);
     ctx.fillStyle = k < 0.3 ? "#FF6A4A" : "#FFD36A"; ctx.fillRect(x + 20, py + 40, (pw - 40) * k, 5);
-    const lock = (f, picked) => (f.cpu ? f.name : f.tag + " " + f.name) + (picked ? "  ✓ LOCKED" : "  · choosing…");
-    ctx.font = "bold 13px system-ui";
-    ctx.fillStyle = top.color; ctx.fillText("TOP: " + lock(top, !!g.pTop), cx, py + 66);
-    ctx.fillStyle = bot.color; ctx.fillText("BOTTOM: " + lock(bot, !!g.pBot), cx, py + 86);
-    // what each of YOUR buttons does right now
     const mine = [P1, P2].filter(f => !f.cpu && (!online || (net && (net.role === "host" ? f === P1 : f === P2))));
-    const lines = mine.map(f => {
-      const isTop = f === top, N = isTop ? TOPN : BOTN, K = online || f === P1 ? P1KEYS : P2KEYS;
-      const lab = a => IS_TOUCH ? { light:"LIGHT", heavy:"HEAVY", grab:"GRAB" }[a] : keyLabel(K[a]);
-      return (mine.length > 1 ? f.tag + " " : "") + lab("light") + " " + N.light + " · " + lab("heavy") + " " + N.heavy + " · " + lab("grab") + " " + N.grab;
-    });
-    ctx.fillStyle = "#B7BFC9"; ctx.font = "12px system-ui";
-    lines.forEach((ln, i) => ctx.fillText(ln, cx, py + 106 + i * 15));
+    const st = (f, picked) => (f.cpu ? f.name : f.tag + " " + f.name) + (picked ? " ✓" : " …");
+    if (mine.length === 1){
+      const me = mine[0], isTop = me === top;
+      ctx.font = "900 15px system-ui"; ctx.fillStyle = isTop ? top.color : "#FFD36A";
+      ctx.fillText(isTop ? (g.pos < 3 ? "YOU'RE ON TOP: climb, then SUBMIT" : "YOU'RE ON TOP: go for the SUBMIT!")
+                         : "ON THE BOTTOM: ESCAPE or SWEEP to get out!", cx, py + 64);
+      ctx.font = "12px system-ui"; ctx.fillStyle = "#8B95A3";
+      ctx.fillText("TOP " + st(top, !!g.pTop) + "  ·  BOTTOM " + st(bot, !!g.pBot) + "  ·  secret picks", cx, py + 84);
+      // the three options as columns: button, move, what it beats
+      const N = isTop ? TOPN : BOTN, Bt = isTop ? TOPB : BOTB, K = online || me === P1 ? P1KEYS : P2KEYS, picked = isTop ? g.pTop : g.pBot;
+      ["light", "heavy", "grab"].forEach((a, i) => {
+        const colX = x + 20 + (pw - 40) * (i + 0.5) / 3, lab = IS_TOUCH ? a.toUpperCase() : keyLabel(K[a]);
+        const on = picked === a;
+        ctx.fillStyle = on ? "rgba(255,211,106,0.22)" : "rgba(255,255,255,0.05)"; roundRect(colX - 70, py + 94, 140, 46, 9); ctx.fill();
+        ctx.font = "900 13px system-ui"; ctx.fillStyle = on ? "#FFD36A" : "#EDEFF2"; ctx.fillText(lab + "  " + N[a], colX, py + 112);
+        ctx.font = "11px system-ui"; ctx.fillStyle = "#8B95A3"; ctx.fillText("beats " + Bt[a], colX, py + 130);
+      });
+    } else {
+      ctx.font = "bold 13px system-ui";
+      ctx.fillStyle = top.color; ctx.fillText("TOP: " + st(top, !!g.pTop), cx, py + 66);
+      ctx.fillStyle = bot.color; ctx.fillText("BOTTOM: " + st(bot, !!g.pBot), cx, py + 86);
+      ctx.fillStyle = "#B7BFC9"; ctx.font = "12px system-ui";
+      mine.forEach((f, i) => {
+        const isTop = f === top, N = isTop ? TOPN : BOTN, Bt = isTop ? TOPB : BOTB, K = f === P1 ? P1KEYS : P2KEYS;
+        ctx.fillText(f.tag + ": " + ["light", "heavy", "grab"].map(a => keyLabel(K[a]) + " " + N[a] + " (beats " + Bt[a] + ")").join(" · "), cx, py + 108 + i * 16);
+      });
+    }
   } else if (g.show){
     ctx.font = "900 22px system-ui"; ctx.fillStyle = g.show.o === "top" ? top.color : g.show.o === "bot" ? bot.color : "#EDEFF2";
     ctx.fillText(g.res, cx, py + 66);
@@ -1048,11 +1074,11 @@ function cpuInput(me, op){
   if (me.inGround) return cpuGroundInput(me);
   if (!me.grabbedBy) me.ai.inGrab = false;
   if (me.grabbedBy){                                                      // read the takedown? hold down to sprawl
-    if (!me.ai.inGrab){ me.ai.inGrab = true; me.ai.sprawl = Math.random() < ({ easy:0.12, normal:0.3, hard:0.45 }[settings.cpu]); }
+    if (!me.ai.inGrab){ me.ai.inGrab = true; me.ai.sprawl = Math.random() < ({ easy:0.04, normal:0.3, hard:0.45 }[settings.cpu]); }
     inp.down = me.ai.sprawl; return inp;
   }
   if (me.subbing || me.subbedBy || me.scr || me.scrBy){                  // mash
-    const rate = { easy:4, normal:7, hard:10 }[settings.cpu];
+    const rate = { easy:3, normal:7, hard:10 }[settings.cpu];
     if (Math.random() < rate / 60) inp.lightP = true;
     return inp;
   }
@@ -1092,7 +1118,7 @@ function cpuInput(me, op){
     if (me.onGround && r < 0.05 * dfn){ me.ai.shieldT = 0.3 + Math.random() * 0.25; inp.dodge = true; inp.dodgeP = true; return inp; }
     if (r < 0.08 * dfn && me.dodgeCD <= 0){ inp.dodgeP = true; inp[dx > 0 ? "left" : "right"] = true; return inp; }
   }
-  if (me.ult >= T.ultMax && adx < 230 && ady < 60 && facingOp && !op.dead && Math.random() < 0.08){ inp.ultP = true; return inp; }
+  if (me.ult >= T.ultMax && adx < 230 && ady < 60 && facingOp && !op.dead && Math.random() < (settings.cpu === "easy" ? 0.02 : 0.08)){ inp.ultP = true; return inp; }
   me.ai.think -= 1/60;
   if (me.ai.think <= 0){
     me.ai.think = (0.16 + Math.random() * 0.24) * DIFFS[settings.cpu].react;   // reaction time (difficulty)
@@ -1937,7 +1963,7 @@ function drawMenu(){
     return;
   }
   centerText("ROLLWARRIORS", 190, 64, "#C9A15A");
-  centerText("BRAWL · GAMEPLAY PROTOTYPE v19", 228, 18, "#8B95A3");
+  centerText("BRAWL · GAMEPLAY PROTOTYPE v20", 228, 18, "#8B95A3");
   centerText("Press 1 — vs CPU", 310, 26, "#EDEFF2");
   centerText("Press 2 — 2 Players (same keyboard)", 352, 26, "#EDEFF2");
   centerText("3 — Settings     ·     4 — Practice     ·     5 — ONLINE", 394, 20, "#C9A15A");
@@ -2445,7 +2471,7 @@ function drawHowTo(){
     ["Knock your opponent off the stage. The higher their %, the further they fly.", "#EDEFF2"],
     ["ATTACK beats GRAB  ·  GRAB beats SHIELD  ·  SHIELD beats ATTACK", "#C9A15A"],
     ["GRAB, then push the stick to throw:  → Double Leg  ·  ← Hip Throw  ·  ↑ Suplex  ·  ↓ Takedown", "#B7BFC9"],
-    ["After a Takedown, tap GRAB on the pinned opponent → GROUND GAME (Light/Heavy/Grab pick your move)", "#B7BFC9"],
+    ["GROUND GAME: after a Takedown, GRAB the pinned opponent. Both pick a move; on the bottom, ESCAPE gets you out", "#B7BFC9"],
     ["Fill the ULT bar by fighting, then tap ULT for your Ultimate", "#B7BFC9"],
   ];
   rules.forEach(([t, c], i) => centerText(t, 108 + i * 30, i === 1 ? 17 : 15, c, i === 1 ? "bold" : "normal"));
@@ -2617,7 +2643,14 @@ const LOCAL_TEST = QS.get("localtest") === "1";          // two tabs on one comp
 const FORCE_RELAY = QS.get("relay") === "1";
 const SIM_LAG = +(QS.get("lag") || 0);                 // test only: add artificial round-trip delay (ms)
 const NO_PREDICT = QS.get("nopredict") === "1";       // test only: turn prediction off to compare
-const ICE = LOCAL_TEST ? [] : [{ urls:"stun:stun.l.google.com:19302" }, { urls:"stun:stun1.l.google.com:19302" }];
+// Optional TURN server: lets players on strict networks (campus WiFi, cellular) still get a fast connection.
+// Get free credentials at metered.ca (Dashboard → TURN Server), then paste them below. Leave empty to skip.
+const TURN_SERVERS = [
+  // { urls: "turn:global.relay.metered.ca:80", username: "PASTE_USERNAME", credential: "PASTE_PASSWORD" },
+  // { urls: "turn:global.relay.metered.ca:443", username: "PASTE_USERNAME", credential: "PASTE_PASSWORD" },
+  // { urls: "turns:global.relay.metered.ca:443?transport=tcp", username: "PASTE_USERNAME", credential: "PASTE_PASSWORD" },
+];
+const ICE = LOCAL_TEST ? [] : [{ urls:"stun:stun.l.google.com:19302" }, { urls:"stun:stun1.l.google.com:19302" }, ...TURN_SERVERS];
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 let online = false, net = null, onlineMenu = { mode:"menu", typed:"", msg:"" };
 let sbClient = null, savedStocks = null;
@@ -2688,7 +2721,7 @@ async function onSignal(m){
       wireChannel(net.dc); wireChannel(net.dcU);
       const offer = await net.pc.createOffer(); await net.pc.setLocalDescription(offer);
       net.sig.send({ t:"offer", sdp:net.pc.localDescription.toJSON() });
-      net.failT = setTimeout(() => { if (net && !net.connected) startRelay(); }, 8000);   // direct link blocked? use the relay
+      net.failT = setTimeout(() => { if (net && !net.connected) startRelay(); }, TURN_SERVERS.length ? 12000 : 8000);   // direct link blocked? use the relay
     }
     else if (m.t === "answer" && net.pc) await net.pc.setRemoteDescription(m.sdp);
     else if (m.t === "ice" && net.pc){ try { await net.pc.addIceCandidate(m.c); } catch(e){} }
@@ -2715,6 +2748,11 @@ function startRelay(){
 }
 function onConnected(){
   if (!net || net.connected) return;
+  if (net.pc && net.pc.getStats) setTimeout(() => {                  // which route did we get?
+    if (!net || !net.pc) return;
+    net.pc.getStats().then(st => { st.forEach(r => { if (r.type === "candidate-pair" && r.state === "succeeded" && r.nominated){
+      const lc = st.get(r.localCandidateId); if (lc && lc.candidateType === "relay" && net) net.viaTurn = true; } }); }).catch(() => {});
+  }, 1500);
   net.connected = true; clearTimeout(net.failT);
   online = true; practice = false; vsCpu = false;
   savedStocks = settings.stocks;
@@ -2773,12 +2811,13 @@ function hostSnapshot(){
     pr: projs.map(p => [Math.round(p.x), Math.round(p.y), p.vx, ref(p.owner), p.ak]),
     pl: PLATS.filter(p => p.move).map(p => [p.x, p.t]),
     f1: serF(P1), f2: serF(P2),
-    gd: grd ? { t:ref(grd.top), b:ref(grd.bot), pos:grd.pos, ph:grd.phase, tm:grd.t, lt:!!grd.pTop, lb:!!grd.pBot, sh:grd.show, res:grd.res, ex:grd.ex, dir:grd.dir, seq:grd.seq } : null };
+    gd: grd ? { t:ref(grd.top), b:ref(grd.bot), pos:grd.pos, ph:grd.phase, tm:grd.t, wn:grd.win, lt:!!grd.pTop, lb:!!grd.pBot, sh:grd.show, res:grd.res, ex:grd.ex, dir:grd.dir, seq:grd.seq } : null };
 }
 function applySnapshot(m){
   if (!P1 || !P2) return;
   if (net.snapN && m.n <= net.snapN) return;             // ignore late, out-of-order snapshots
   net.snapN = m.n;
+  net.buf = net.buf || []; net.buf.push({ t:performance.now(), x:m.f1.x, y:m.f1.y, dead:m.f1.dead }); if (net.buf.length > 12) net.buf.shift();
   applyF(P1, m.f1); applyF(P2, m.f2);
   playTime = m.pt; shake = m.sh; impactFlash = Math.max(impactFlash, m.fl);
   cine = m.cine ? { a:deref(m.cine.a), b:deref(m.cine.b), t:m.cine.t, dur:m.cine.dur } : null;
@@ -2786,7 +2825,7 @@ function applySnapshot(m){
   for (const [x, y, vx, o, ak] of m.pr) projs.push({ x, y, vx, owner:deref(o), A:ATTACKS[ak], ak, life:1 });
   PLATS.filter(p => p.move).forEach((p, i) => { if (m.pl[i]){ p.x = m.pl[i][0]; p.t = m.pl[i][1]; } });
   grd = m.gd ? { top:deref(m.gd.t), bot:deref(m.gd.b), pos:m.gd.pos, phase:m.gd.ph, t:m.gd.tm, pTop:m.gd.lt ? "x" : null, pBot:m.gd.lb ? "x" : null,
-                 show:m.gd.sh, res:m.gd.res, ex:m.gd.ex, dir:m.gd.dir, seq:m.gd.seq } : null;
+                 show:m.gd.sh, res:m.gd.res, ex:m.gd.ex, dir:m.gd.dir, seq:m.gd.seq, win:m.gd.wn } : null;
   if (m.st === "over" && state !== "over"){ winner = deref(m.w); state = "over"; }
 }
 function handleGame(m){
@@ -2866,12 +2905,30 @@ function guestStep(dt){
   for (const e of EDGE_KEYS) if (inp[e]) net.outE.add(e);
   net.frame++; net.seq = (net.seq || 0) + 1;
   net.hist = net.hist || []; net.hist.push({ s:net.seq, inp:{ ...inp } }); if (net.hist.length > 180) net.hist.shift();
-  if (!net.relay || net.frame % 2 === 0){
+  const heldNow = "" + +inp.left + +inp.right + +inp.up + +inp.down + +inp.dodge, changed = heldNow !== net.lastHeld || net.outE.size > 0;
+  net.lastHeld = heldNow;
+  if (!net.relay || changed || net.frame % 2 === 0){                 // relay: presses go out instantly, otherwise every other frame
     netSend({ k:"in", s:net.seq, h:{ left:inp.left, right:inp.right, up:inp.up, down:inp.down, dodge:inp.dodge }, e:[...net.outE] });
     net.outE.clear();
   }
   // client-side prediction: move my own warrior immediately; the host still decides hits and KOs
   if (P2 && !cine && state === "playing" && !NO_PREDICT){ quiet = true; try { updateFighter(P2, inp, dt); } finally { quiet = false; } }
+  // projectiles keep flying smoothly between host updates
+  for (const pr of projs) pr.x += pr.vx * dt;
+  // smooth the opponent: show them slightly in the past, blended between host updates (no more stepping)
+  const B = net.buf, locked = f => f.grabbing || f.grabbedBy || f.throwing || f.thrownBy || f.inGround || f.subbing || f.subbedBy || f.scr || f.scrBy;
+  if (P1 && B && B.length >= 2 && !cine && !locked(P1) && !locked(P2) && !NO_PREDICT){
+    const rt = performance.now() - (net.relay ? 85 : 40);
+    for (let i = B.length - 2; i >= 0; i--){
+      const a = B[i], b = B[i + 1];
+      if (a.t <= rt && rt <= b.t){
+        if (a.dead !== b.dead || Math.abs(b.x - a.x) > 220 || Math.abs(b.y - a.y) > 220) break;     // respawns/launches: don't blend
+        const k = (rt - a.t) / Math.max(1, b.t - a.t);
+        P1.x = a.x + (b.x - a.x) * k; P1.y = a.y + (b.y - a.y) * k;
+        break;
+      }
+    }
+  }
 }
 function hostSend(){
   if (!net || !net.connected) return;
@@ -2936,7 +2993,7 @@ function drawOnline(){
 }
 function drawNetBadge(){
   if (!online || !net) return;
-  const txt = (net.relay ? "ONLINE · RELAY" : "ONLINE · DIRECT") + (net.rtt ? " · " + net.rtt + " ms" : "");
+  const txt = (net.relay ? "ONLINE · RELAY" : net.viaTurn ? "ONLINE · TURN" : "ONLINE · DIRECT") + (net.rtt ? " · " + net.rtt + " ms" : "");
   ctx.font = "bold 11px system-ui"; const w = ctx.measureText(txt).width + 22;
   ctx.fillStyle = "rgba(11,14,19,0.8)"; roundRect(W - w - 14, 12, w, 22, 11); ctx.fill();
   ctx.fillStyle = net.rtt > 150 ? "#FF8A4C" : "#5AE68C"; ctx.textAlign = "left"; ctx.fillText(txt, W - w - 3, 27);
